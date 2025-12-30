@@ -911,12 +911,16 @@ class ScenarioGenerator:
             else:
                 # Rastgele dağıt (uzun vardiyalara daha fazla)
                 if sure >= 16:
-                    pay = self.rng.randint(int(kalan * 0.4), int(kalan * 0.8))
+                    min_pay = int(kalan * 0.4)
+                    max_pay = int(kalan * 0.8)
+                    pay = self.rng.randint(min_pay, max(min_pay, max_pay))
                 elif sure >= 12:
-                    pay = self.rng.randint(int(kalan * 0.2), int(kalan * 0.5))
+                    min_pay = int(kalan * 0.2)
+                    max_pay = int(kalan * 0.5)
+                    pay = self.rng.randint(min_pay, max(min_pay, max_pay))
                 else:
-                    pay = self.rng.randint(0, int(kalan * 0.3))
-                
+                    pay = self.rng.randint(0, max(0, int(kalan * 0.3)))
+
                 hedefler[vardiya_isim] = min(pay, kalan)
                 kalan -= hedefler[vardiya_isim]
         

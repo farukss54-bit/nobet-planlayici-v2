@@ -422,7 +422,16 @@ with tabs[0]:
         for i in range(len(current_list), personel_sayisi):
             current_list.append(f"Personel {i+1}")
     elif len(current_list) > personel_sayisi:
+        removed = current_list[personel_sayisi:]
         st.session_state["personel_list"] = current_list[:personel_sayisi]
+
+        # Clean up associated data for removed personnel
+        for p in removed:
+            for key in ["personel_targets", "weekday_block_map", "izin_map",
+                       "prefer_map", "personel_alan_yetkinlikleri",
+                       "personel_kidem_gruplari", "personel_vardiya_kisitlari"]:
+                if key in st.session_state and p in st.session_state[key]:
+                    del st.session_state[key][p]
     
     st.session_state["personel_sayisi"] = personel_sayisi
     
@@ -531,9 +540,11 @@ with tabs[1]:
                 with col3:
                     if st.button("🗑️ Grubu Sil", key=f"grup_sil_{i}"):
                         # Önce bu gruptaki personellerin atamalarını kaldır
-                        for p, g in list(personel_gruplari.items()):
-                            if g == grup["isim"]:
-                                del personel_gruplari[p]
+                        personel_gruplari = st.session_state.get("personel_kidem_gruplari", {})
+                        to_remove = [p for p, g in personel_gruplari.items() if g == grup["isim"]]
+                        for p in to_remove:
+                            del st.session_state["personel_kidem_gruplari"][p]
+
                         st.session_state["kidem_gruplari"].pop(i)
                         st.rerun()
                 
@@ -721,9 +732,10 @@ with tabs[2]:
             st.caption("Henüz alan tanımlanmamış.")
         else:
             toplam_kontenjan = sum(a.get("kontenjan", 1) for a in alanlar)
-            # max_kontenjan None olabilir, bu yüzden or kullanıyoruz
+            # max_kontenjan None olabilir, None check yapıyoruz
             toplam_max = sum(
-                (a.get("max_kontenjan") or (a.get("kontenjan", 1) + 2)) 
+                (a.get("max_kontenjan") if a.get("max_kontenjan") is not None
+                 else a.get("kontenjan", 1) + 2)
                 for a in alanlar
             )
             st.caption(f"Toplam günlük: Hedef **{toplam_kontenjan}** / Max **{toplam_max}** kişi")
@@ -1060,7 +1072,7 @@ with tabs[4]:
         izin_map = st.session_state.get("izin_map", {})
         izin_map = {k: v for k, v in izin_map.items() if k in personeller}
         for p in personeller:
-            izin_map.setdefault(p, [])
+            izin_map.setdefault(p, set())
         st.session_state["izin_map"] = izin_map
         
         # Her personel için izin girişi
@@ -1069,10 +1081,10 @@ with tabs[4]:
                 selected = st.multiselect(
                     "İzinli günler",
                     options=gun_listesi,
-                    default=sorted(list(set(st.session_state["izin_map"].get(p, [])))),
+                    default=sorted(list(st.session_state["izin_map"].get(p, set()))),
                     key=f"izin_{p}"
                 )
-                st.session_state["izin_map"][p] = sorted(selected)
+                st.session_state["izin_map"][p] = set(selected)
                 
                 # Bloklu hafta günleri
                 gun_adlari = tum_hafta_gunleri()

@@ -27,17 +27,21 @@ class VardiyaTipi:
     @property
     def saat(self) -> int:
         """Vardiya süresini saat olarak hesaplar"""
-        b_saat, b_dk = map(int, self.baslangic.split(":"))
-        s_saat, s_dk = map(int, self.bitis.split(":"))
-        
-        baslangic_dk = b_saat * 60 + b_dk
-        bitis_dk = s_saat * 60 + s_dk
-        
-        # Gece geçişi varsa (örn: 16:00 - 08:00)
-        if bitis_dk <= baslangic_dk:
-            bitis_dk += 24 * 60
-        
-        return (bitis_dk - baslangic_dk) // 60
+        try:
+            b_saat, b_dk = map(int, self.baslangic.split(":"))
+            s_saat, s_dk = map(int, self.bitis.split(":"))
+
+            baslangic_dk = b_saat * 60 + b_dk
+            bitis_dk = s_saat * 60 + s_dk
+
+            # Gece geçişi varsa (örn: 16:00 - 08:00)
+            if bitis_dk <= baslangic_dk:
+                bitis_dk += 24 * 60
+
+            return (bitis_dk - baslangic_dk) // 60
+        except (ValueError, AttributeError):
+            # Fallback to default 8-hour shift if parsing fails
+            return 8
     
     def to_dict(self) -> dict:
         return {
