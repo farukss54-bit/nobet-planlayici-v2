@@ -205,6 +205,7 @@ def init_session_state():
         st.session_state["ardisik_yasak"] = ayarlar.ardisik_yasak
         st.session_state["gunasiri_limit_aktif"] = ayarlar.gunasiri_limit_aktif
         st.session_state["max_gunasiri"] = ayarlar.max_gunasiri
+        st.session_state["enforce_minimum_staffing"] = ayarlar.enforce_minimum_staffing
         st.session_state["hafta_sonu_dengesi"] = ayarlar.hafta_sonu_dengesi
         st.session_state["w_cuma"] = ayarlar.w_cuma
         st.session_state["w_cumartesi"] = ayarlar.w_cumartesi
@@ -296,6 +297,7 @@ def session_to_ayarlar() -> Ayarlar:
         ardisik_yasak=st.session_state.get("ardisik_yasak", True),
         gunasiri_limit_aktif=st.session_state.get("gunasiri_limit_aktif", True),
         max_gunasiri=st.session_state.get("max_gunasiri", 1),
+        enforce_minimum_staffing=st.session_state.get("enforce_minimum_staffing", True),
         hafta_sonu_dengesi=st.session_state.get("hafta_sonu_dengesi", True),
         w_cuma=st.session_state.get("w_cuma", 1000),
         w_cumartesi=st.session_state.get("w_cumartesi", 1000),
@@ -1050,6 +1052,22 @@ with tabs[3]:
     )
     st.session_state["saat_bazli_denge"] = saat_denge
 
+    st.divider()
+
+    # ====== MİNİMUM STAFFING AYARI ======
+    st.markdown("### 🚨 Minimum Personel Kuralı")
+
+    enforce_staffing = st.checkbox(
+        "Her vardiyada minimum 1 personel zorunlu (Hard Constraint)",
+        value=st.session_state.get("enforce_minimum_staffing", True),
+        help="✅ Açık: Her vardiyada mutlaka en az 1 kişi olmalı. Çözüm bulunamazsa hangi vardiya boş kalacağını gösterir.\n"
+             "❌ Kapalı: Boş vardiyalara izin verir ama yüksek ceza puanı uygular. Acil durumlar için esnek çözüm sağlar."
+    )
+    st.session_state["enforce_minimum_staffing"] = enforce_staffing
+
+    if not enforce_staffing:
+        st.warning("⚠️ **Dikkat:** Bu ayar kapalıysa bazı vardiyalar boş kalabilir!")
+
 
 # =============================================================================
 # TAB 4: İZİNLER
@@ -1477,7 +1495,8 @@ with tabs[6]:
             ardisik_yasak=st.session_state.get("ardisik_yasak", True),
             gunasiri_limit_aktif=st.session_state.get("gunasiri_limit_aktif", True),
             max_gunasiri_per_kisi=st.session_state.get("max_gunasiri", 1),
-            
+            enforce_minimum_staffing=st.session_state.get("enforce_minimum_staffing", True),
+
             # Hafta sonu dengesi
             hafta_sonu_dengesi_aktif=st.session_state.get("hafta_sonu_dengesi", True),
             w_cuma=st.session_state.get("w_cuma", 1000),

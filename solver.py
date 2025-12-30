@@ -58,10 +58,13 @@ class SolverConfig:
     gunasiri_limit_aktif: bool = True
     max_gunasiri_per_kisi: int = 1
 
+    # Minimum staffing enforcement
+    enforce_minimum_staffing: bool = True  # Hard constraint if True, soft if False
+    w_vardiya_min_kontenjan: int = 50000  # Penalty for empty shifts when soft (very high)
+
     w_alan_kontenjan_sapma: int = 10000
     w_gunluk_denge: int = 5000
     w_saat_denge: int = 3000
-    w_vardiya_min_kontenjan: int = 5000  # Penalty for empty shifts (soft constraint)
 
     hafta_sonu_dengesi_aktif: bool = True
     w_cuma: int = 1000
@@ -174,7 +177,9 @@ class NobetSolver:
         if self.input.vardiya_modu:
             self._vardiya_kisitlari()
             self._alan_vardiya_eslesmesi()
-            # _vardiya_minimum_kontenjan moved to soft constraints
+            # Minimum staffing: Hard constraint if enforce_minimum_staffing is True
+            if self.input.config.enforce_minimum_staffing:
+                self._vardiya_minimum_kontenjan_hard()
 
         if self.input.config.ardisik_yasak:
             self._ardisik_gun_yasagi()
@@ -193,8 +198,9 @@ class NobetSolver:
         else:
             self._gunluk_kisi_dengesi()
 
-        if self.input.vardiya_modu:
-            self._vardiya_minimum_kontenjan()  # Soft constraint for minimum staffing
+        # Minimum staffing: Soft constraint if enforce_minimum_staffing is False
+        if self.input.vardiya_modu and not self.input.config.enforce_minimum_staffing:
+            self._vardiya_minimum_kontenjan_soft()
 
         if self.input.config.saat_bazli_denge and self.input.vardiya_modu:
             self._saat_bazli_denge()
@@ -311,7 +317,24 @@ class NobetSolver:
                         for g in range(1, self.gun_sayisi + 1):
                             self.model.Add(self.x[p, g, a_idx, v_idx] == 0)
     
-    def _vardiya_minimum_kontenjan(self):
+    def _vardiya_minimum_kontenjan_hard(self):
+        """Her vardiyada (her alanda) günde en az 1 kişi olmalı - HARD CONSTRAINT"""
+        for g in range(1, self.gun_sayisi + 1):
+            for a in range(self.n_alan):
+                for v in range(self.n_vardiya):
+                    # Bu alan-vardiya kombinasyonu geçerli mi kontrol et
+                    if self.input.coklu_alan_modu:
+                        alan = self.input.alanlar[a]
+                        vardiya = self.input.vardiyalar[v]
+                        # Alan için vardiya kısıtı varsa ve bu vardiya listede yoksa atla
+                        if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                            continue
+
+                    # Bu gün/alan/vardiya için en az 1 kişi
+                    toplam = sum(self.x[p, g, a, v] for p in range(self.n_personel))
+                    self.model.Add(toplam >= 1)
+
+    def _vardiya_minimum_kontenjan_soft(self):
         """Her vardiyada (her alanda) günde en az 1 kişi olmalı - SOFT CONSTRAINT"""
         w = self.input.config.w_vardiya_min_kontenjan
         for g in range(1, self.gun_sayisi + 1):
@@ -742,12 +765,12 @@ def gelismis_teshis(
                     ))
     
     # =========================================================================
-    # 3. GÜNLÜK KAPASİTE ANALİZİ
+    # 3. GÜNLÜK KAPASİTE ANALİZİ (Unfillable Shift Detection)
     # =========================================================================
-    
+
     for gun in range(1, gun_sayisi + 1):
         musait_kisiler = [p for p in personeller if gun not in izinler.get(p, set())]
-        
+
         if alanlar:
             # Çoklu alan modu
             for alan in alanlar:
@@ -756,7 +779,7 @@ def gelismis_teshis(
                     p for p in musait_kisiler
                     if not personel_alan_yetkinlikleri.get(p) or alan.isim in personel_alan_yetkinlikleri.get(p, [])
                 ]
-                
+
                 if len(alan_musait) < alan.gunluk_kontenjan:
                     sorunlar.append(TeshisSonucu(
                         tip="gunluk_kapasite_yetersiz",
@@ -771,7 +794,7 @@ def gelismis_teshis(
                             "gerekli_kontenjan": alan.gunluk_kontenjan
                         }
                     ))
-                
+
                 # Kıdem kuralları kontrolü
                 alan_kidem = alan.kidem_kurallari
                 if alan_kidem:
@@ -783,7 +806,7 @@ def gelismis_teshis(
                                 p for p in alan_musait
                                 if personel_kidem_gruplari.get(p) == grup_isim
                             ]
-                            
+
                             if len(grup_musait) < min_k:
                                 sorunlar.append(TeshisSonucu(
                                     tip="kidem_eksik",
@@ -799,8 +822,8 @@ def gelismis_teshis(
                                         "musait_kisiler": grup_musait
                                     }
                                 ))
-        
-        # Vardiya kontrolü
+
+        # Vardiya kontrolü - detect unfillable shifts
         if vardiyalar:
             for vardiya in vardiyalar:
                 # Bu vardiyada çalışabilecek müsait kişiler
@@ -808,19 +831,49 @@ def gelismis_teshis(
                     p for p in musait_kisiler
                     if not personel_vardiya_kisitlari.get(p) or vardiya.isim in personel_vardiya_kisitlari.get(p, [])
                 ]
-                
-                if len(vardiya_musait) < 1:
-                    sorunlar.append(TeshisSonucu(
-                        tip="vardiya_bos_kalacak",
-                        seviye="error",
-                        gun=gun,
-                        mesaj=f"Gün {gun}, {vardiya.isim}: Çalışabilecek müsait kimse yok!",
-                        detay={
-                            "gun": gun,
-                            "vardiya": vardiya.isim,
-                            "musait_kisiler": []
-                        }
-                    ))
+
+                # If there are multiple areas, check each area+vardiya combination
+                if alanlar:
+                    for alan in alanlar:
+                        # Skip if this vardiya is not valid for this area
+                        if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                            continue
+
+                        # People who can work in this area AND this shift
+                        alan_vardiya_musait = [
+                            p for p in vardiya_musait
+                            if not personel_alan_yetkinlikleri.get(p) or alan.isim in personel_alan_yetkinlikleri.get(p, [])
+                        ]
+
+                        if len(alan_vardiya_musait) < 1:
+                            sorunlar.append(TeshisSonucu(
+                                tip="vardiya_alan_bos_kalacak",
+                                seviye="error",
+                                gun=gun,
+                                mesaj=f"Gün {gun}, {alan.isim}, {vardiya.isim}: Çalışabilecek müsait kimse yok! (Minimum staffing gerekli)",
+                                detay={
+                                    "gun": gun,
+                                    "alan": alan.isim,
+                                    "vardiya": vardiya.isim,
+                                    "musait_kisiler": [],
+                                    "oneri": "Bu gün için izinleri azaltın veya minimum staffing ayarını soft yapın"
+                                }
+                            ))
+                else:
+                    # Single area mode
+                    if len(vardiya_musait) < 1:
+                        sorunlar.append(TeshisSonucu(
+                            tip="vardiya_bos_kalacak",
+                            seviye="error",
+                            gun=gun,
+                            mesaj=f"Gün {gun}, {vardiya.isim}: Çalışabilecek müsait kimse yok! (Minimum staffing gerekli)",
+                            detay={
+                                "gun": gun,
+                                "vardiya": vardiya.isim,
+                                "musait_kisiler": [],
+                                "oneri": "Bu gün için izinleri azaltın veya minimum staffing ayarını soft yapın"
+                            }
+                        ))
     
     # =========================================================================
     # 4. TOPLAM HEDEF vs KAPASİTE ANALİZİ

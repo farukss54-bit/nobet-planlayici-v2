@@ -262,7 +262,8 @@ class Ayarlar:
     ardisik_yasak: bool = True
     gunasiri_limit_aktif: bool = True
     max_gunasiri: int = 1
-    
+    enforce_minimum_staffing: bool = True  # Minimum staffing is hard constraint if True
+
     # Soft constraints - hafta sonu
     hafta_sonu_dengesi: bool = True
     w_cuma: int = 1000
@@ -292,6 +293,7 @@ class Ayarlar:
             "ardisik_yasak": self.ardisik_yasak,
             "gunasiri_limit_aktif": self.gunasiri_limit_aktif,
             "max_gunasiri": self.max_gunasiri,
+            "enforce_minimum_staffing": self.enforce_minimum_staffing,
             "hafta_sonu_dengesi": self.hafta_sonu_dengesi,
             "w_cuma": self.w_cuma,
             "w_cumartesi": self.w_cumartesi,
@@ -318,6 +320,7 @@ class Ayarlar:
             ardisik_yasak=data.get("ardisik_yasak", True),
             gunasiri_limit_aktif=data.get("gunasiri_limit_aktif", True),
             max_gunasiri=data.get("max_gunasiri", 1),
+            enforce_minimum_staffing=data.get("enforce_minimum_staffing", True),
             hafta_sonu_dengesi=data.get("hafta_sonu_dengesi", True),
             w_cuma=data.get("w_cuma", 1000),
             w_cumartesi=data.get("w_cumartesi", 1000),
