@@ -205,6 +205,7 @@ def init_session_state():
         st.session_state["ardisik_yasak"] = ayarlar.ardisik_yasak
         st.session_state["gunasiri_limit_aktif"] = ayarlar.gunasiri_limit_aktif
         st.session_state["max_gunasiri"] = ayarlar.max_gunasiri
+        st.session_state["enforce_minimum_staffing"] = ayarlar.enforce_minimum_staffing
         st.session_state["hafta_sonu_dengesi"] = ayarlar.hafta_sonu_dengesi
         st.session_state["w_cuma"] = ayarlar.w_cuma
         st.session_state["w_cumartesi"] = ayarlar.w_cumartesi
@@ -296,6 +297,7 @@ def session_to_ayarlar() -> Ayarlar:
         ardisik_yasak=st.session_state.get("ardisik_yasak", True),
         gunasiri_limit_aktif=st.session_state.get("gunasiri_limit_aktif", True),
         max_gunasiri=st.session_state.get("max_gunasiri", 1),
+        enforce_minimum_staffing=st.session_state.get("enforce_minimum_staffing", True),
         hafta_sonu_dengesi=st.session_state.get("hafta_sonu_dengesi", True),
         w_cuma=st.session_state.get("w_cuma", 1000),
         w_cumartesi=st.session_state.get("w_cumartesi", 1000),
@@ -422,7 +424,16 @@ with tabs[0]:
         for i in range(len(current_list), personel_sayisi):
             current_list.append(f"Personel {i+1}")
     elif len(current_list) > personel_sayisi:
+        removed = current_list[personel_sayisi:]
         st.session_state["personel_list"] = current_list[:personel_sayisi]
+
+        # Clean up associated data for removed personnel
+        for p in removed:
+            for key in ["personel_targets", "weekday_block_map", "izin_map",
+                       "prefer_map", "personel_alan_yetkinlikleri",
+                       "personel_kidem_gruplari", "personel_vardiya_kisitlari"]:
+                if key in st.session_state and p in st.session_state[key]:
+                    del st.session_state[key][p]
     
     st.session_state["personel_sayisi"] = personel_sayisi
     
@@ -531,9 +542,11 @@ with tabs[1]:
                 with col3:
                     if st.button("🗑️ Grubu Sil", key=f"grup_sil_{i}"):
                         # Önce bu gruptaki personellerin atamalarını kaldır
-                        for p, g in list(personel_gruplari.items()):
-                            if g == grup["isim"]:
-                                del personel_gruplari[p]
+                        personel_gruplari = st.session_state.get("personel_kidem_gruplari", {})
+                        to_remove = [p for p, g in personel_gruplari.items() if g == grup["isim"]]
+                        for p in to_remove:
+                            del st.session_state["personel_kidem_gruplari"][p]
+
                         st.session_state["kidem_gruplari"].pop(i)
                         st.rerun()
                 
@@ -721,9 +734,10 @@ with tabs[2]:
             st.caption("Henüz alan tanımlanmamış.")
         else:
             toplam_kontenjan = sum(a.get("kontenjan", 1) for a in alanlar)
-            # max_kontenjan None olabilir, bu yüzden or kullanıyoruz
+            # max_kontenjan None olabilir, None check yapıyoruz
             toplam_max = sum(
-                (a.get("max_kontenjan") or (a.get("kontenjan", 1) + 2)) 
+                (a.get("max_kontenjan") if a.get("max_kontenjan") is not None
+                 else a.get("kontenjan", 1) + 2)
                 for a in alanlar
             )
             st.caption(f"Toplam günlük: Hedef **{toplam_kontenjan}** / Max **{toplam_max}** kişi")
@@ -1038,6 +1052,22 @@ with tabs[3]:
     )
     st.session_state["saat_bazli_denge"] = saat_denge
 
+    st.divider()
+
+    # ====== MİNİMUM STAFFING AYARI ======
+    st.markdown("### 🚨 Minimum Personel Kuralı")
+
+    enforce_staffing = st.checkbox(
+        "Her vardiyada minimum 1 personel zorunlu (Hard Constraint)",
+        value=st.session_state.get("enforce_minimum_staffing", True),
+        help="✅ Açık: Her vardiyada mutlaka en az 1 kişi olmalı. Çözüm bulunamazsa hangi vardiya boş kalacağını gösterir.\n"
+             "❌ Kapalı: Boş vardiyalara izin verir ama yüksek ceza puanı uygular. Acil durumlar için esnek çözüm sağlar."
+    )
+    st.session_state["enforce_minimum_staffing"] = enforce_staffing
+
+    if not enforce_staffing:
+        st.warning("⚠️ **Dikkat:** Bu ayar kapalıysa bazı vardiyalar boş kalabilir!")
+
 
 # =============================================================================
 # TAB 4: İZİNLER
@@ -1060,7 +1090,7 @@ with tabs[4]:
         izin_map = st.session_state.get("izin_map", {})
         izin_map = {k: v for k, v in izin_map.items() if k in personeller}
         for p in personeller:
-            izin_map.setdefault(p, [])
+            izin_map.setdefault(p, set())
         st.session_state["izin_map"] = izin_map
         
         # Her personel için izin girişi
@@ -1069,10 +1099,10 @@ with tabs[4]:
                 selected = st.multiselect(
                     "İzinli günler",
                     options=gun_listesi,
-                    default=sorted(list(set(st.session_state["izin_map"].get(p, [])))),
+                    default=sorted(list(st.session_state["izin_map"].get(p, set()))),
                     key=f"izin_{p}"
                 )
-                st.session_state["izin_map"][p] = sorted(selected)
+                st.session_state["izin_map"][p] = set(selected)
                 
                 # Bloklu hafta günleri
                 gun_adlari = tum_hafta_gunleri()
@@ -1465,7 +1495,8 @@ with tabs[6]:
             ardisik_yasak=st.session_state.get("ardisik_yasak", True),
             gunasiri_limit_aktif=st.session_state.get("gunasiri_limit_aktif", True),
             max_gunasiri_per_kisi=st.session_state.get("max_gunasiri", 1),
-            
+            enforce_minimum_staffing=st.session_state.get("enforce_minimum_staffing", True),
+
             # Hafta sonu dengesi
             hafta_sonu_dengesi_aktif=st.session_state.get("hafta_sonu_dengesi", True),
             w_cuma=st.session_state.get("w_cuma", 1000),
@@ -1549,8 +1580,8 @@ with tabs[6]:
                 tatiller=tatiller,
                 birlikte_tut=birlikte_tut,
                 ayri_tut=ayri_tut,
-                alanlar=alanlar if alanlar else None,
-                vardiyalar=vardiyalar if vardiyalar else None,
+                alanlar=alanlar if len(alanlar) > 0 else None,
+                vardiyalar=vardiyalar if len(vardiyalar) > 0 else None,
                 personel_alan_yetkinlikleri=personel_alan_yetkinlikleri,
                 personel_vardiya_kisitlari=personel_vardiya_kisitlari,
                 personel_kidem_gruplari=st.session_state.get("personel_kidem_gruplari", {}),

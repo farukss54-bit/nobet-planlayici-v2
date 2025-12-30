@@ -84,8 +84,9 @@ def inject_scenario_to_session_state(data: Dict[str, Any]) -> None:
     st.session_state.manuel_tatiller = data.get("manuel_tatiller", "")
     
     # === OPSİYONEL MODLAR ===
-    st.session_state.alanlar = data.get("alanlar", [])
-    st.session_state.alan_modu_aktif = data.get("alan_modu_aktif", False)
+    alanlar = data.get("alanlar", [])
+    st.session_state.alanlar = alanlar
+    st.session_state.alan_modu_aktif = len(alanlar) > 0  # Auto-enable if areas exist
     st.session_state.alan_bazli_denklik = data.get("alan_bazli_denklik", False)
     st.session_state.personel_alan_yetkinlikleri = data.get("personel_alan_yetkinlikleri", {})
     
@@ -358,6 +359,8 @@ def _render_personel_tab():
     
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("Henüz personel eklenmemiş.")
 
 
 def _render_izin_tab():
@@ -476,7 +479,8 @@ def preview_solver_input() -> Dict[str, Any]:
         return {}
     
     meta = get_demo_meta()
-    
+    gun_sayisi = meta.get("gun_sayisi", 30)
+
     return {
         "yil": meta.get("yil"),
         "ay": meta.get("ay"),
@@ -486,9 +490,9 @@ def preview_solver_input() -> Dict[str, Any]:
             k: list(v) for k, v in st.session_state.get("izin_map", {}).items()
         },
         "tatiller": [
-            int(x.strip()) 
-            for x in st.session_state.get("manuel_tatiller", "").split(",") 
-            if x.strip().isdigit()
+            int(x.strip())
+            for x in st.session_state.get("manuel_tatiller", "").split(",")
+            if x.strip().isdigit() and 1 <= int(x.strip()) <= gun_sayisi
         ],
         "ayri_tut": [
             (p["a"], p["b"]) for p in st.session_state.get("no_pairs_list", [])
