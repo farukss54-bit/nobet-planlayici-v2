@@ -41,53 +41,53 @@ from streamlit_integration import (
 st.set_page_config(page_title="Nöbet Planlayıcı", layout="wide")
 st.title("🏥 Acil Servis Nöbet Planlayıcı")
 
-# Demo modu aktifse detaylı özet göster
-if is_demo_active():
-    meta = get_demo_meta()
-    
-    with st.expander(f"🧪 **Demo Modu Aktif** - {meta.get('difficulty', '?')} | Seed: {meta.get('seed', '?')}", expanded=True):
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("👥 Personel", len(st.session_state.get('personel_list', [])))
-        
-        with col2:
-            izin_toplam = sum(len(v) for v in st.session_state.get('izin_map', {}).values())
-            st.metric("🏖️ Toplam İzin", izin_toplam)
-        
-        with col3:
-            kisit_toplam = (
-                len(st.session_state.get('no_pairs_list', [])) +
-                len(st.session_state.get('soft_no_pairs_list', []))
-            )
-            st.metric("🚫 Çift Kısıtları", kisit_toplam)
-        
-        with col4:
-            alan_sayisi = len(st.session_state.get('alanlar', []))
-            vardiya_sayisi = len(st.session_state.get('vardiya_tipleri', []))
-            st.metric("🏢/⏰ Alan/Vardiya", f"{alan_sayisi}/{vardiya_sayisi}")
-        
-        # Kapasite/Hedef hesapla ve göster
-        alanlar = st.session_state.get('alanlar', [])
-        vardiyalar = st.session_state.get('vardiya_tipleri', [])
-        gun_sayisi = meta.get('gun_sayisi', 30)
-        
-        if alanlar:
-            toplam_kontenjan = sum(a.get('kontenjan', 1) for a in alanlar)
-        else:
-            toplam_kontenjan = 1
-        
-        if vardiyalar:
-            gunluk_slot = toplam_kontenjan * len(vardiyalar)
-        else:
-            gunluk_slot = toplam_kontenjan
-        
-        demo_kapasite = gunluk_slot * gun_sayisi
-        
-        st.caption(f"📅 Dönem: {meta.get('yil', '?')}-{meta.get('ay', '?'):02d} | 📊 Demo Kapasite: {demo_kapasite} | ✅ Çözüm sekmesine git")
-
-# Demo detay modalı
-render_demo_detail_modal()
+# Demo modu geçici olarak devre dışı
+# if is_demo_active():
+#     meta = get_demo_meta()
+#
+#     with st.expander(f"🧪 **Demo Modu Aktif** - {meta.get('difficulty', '?')} | Seed: {meta.get('seed', '?')}", expanded=True):
+#         col1, col2, col3, col4 = st.columns(4)
+#
+#         with col1:
+#             st.metric("👥 Personel", len(st.session_state.get('personel_list', [])))
+#
+#         with col2:
+#             izin_toplam = sum(len(v) for v in st.session_state.get('izin_map', {}).values())
+#             st.metric("🏖️ Toplam İzin", izin_toplam)
+#
+#         with col3:
+#             kisit_toplam = (
+#                 len(st.session_state.get('no_pairs_list', [])) +
+#                 len(st.session_state.get('soft_no_pairs_list', []))
+#             )
+#             st.metric("🚫 Çift Kısıtları", kisit_toplam)
+#
+#         with col4:
+#             alan_sayisi = len(st.session_state.get('alanlar', []))
+#             vardiya_sayisi = len(st.session_state.get('vardiya_tipleri', []))
+#             st.metric("🏢/⏰ Alan/Vardiya", f"{alan_sayisi}/{vardiya_sayisi}")
+#
+#         # Kapasite/Hedef hesapla ve göster
+#         alanlar = st.session_state.get('alanlar', [])
+#         vardiyalar = st.session_state.get('vardiya_tipleri', [])
+#         gun_sayisi = meta.get('gun_sayisi', 30)
+#
+#         if alanlar:
+#             toplam_kontenjan = sum(a.get('kontenjan', 1) for a in alanlar)
+#         else:
+#             toplam_kontenjan = 1
+#
+#         if vardiyalar:
+#             gunluk_slot = toplam_kontenjan * len(vardiyalar)
+#         else:
+#             gunluk_slot = toplam_kontenjan
+#
+#         demo_kapasite = gunluk_slot * gun_sayisi
+#
+#         st.caption(f"📅 Dönem: {meta.get('yil', '?')}-{meta.get('ay', '?'):02d} | 📊 Demo Kapasite: {demo_kapasite} | ✅ Çözüm sekmesine git")
+#
+# # Demo detay modalı
+# render_demo_detail_modal()
 
 
 # =============================================================================
@@ -372,8 +372,8 @@ with st.sidebar:
     else:
         st.caption("Henüz kaydedilmiş plan yok")
     
-    # Demo Senaryo Kontrolleri
-    get_demo_sidebar()
+    # Demo Senaryo Kontrolleri (geçici olarak devre dışı)
+    # get_demo_sidebar()
 
 
 # =============================================================================
