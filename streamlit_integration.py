@@ -84,8 +84,9 @@ def inject_scenario_to_session_state(data: Dict[str, Any]) -> None:
     st.session_state.manuel_tatiller = data.get("manuel_tatiller", "")
     
     # === OPSİYONEL MODLAR ===
-    st.session_state.alanlar = data.get("alanlar", [])
-    st.session_state.alan_modu_aktif = data.get("alan_modu_aktif", False)
+    alanlar = data.get("alanlar", [])
+    st.session_state.alanlar = alanlar
+    st.session_state.alan_modu_aktif = len(alanlar) > 0  # Auto-enable if areas exist
     st.session_state.alan_bazli_denklik = data.get("alan_bazli_denklik", False)
     st.session_state.personel_alan_yetkinlikleri = data.get("personel_alan_yetkinlikleri", {})
     
