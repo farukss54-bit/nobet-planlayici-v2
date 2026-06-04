@@ -15,6 +15,24 @@ from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, field
 
 from utils import ay_gun_sayisi, gunleri_weekday_ile_filtrele
+from config import (
+    max_sure_saniye,
+    thread_sayisi,
+    max_gunasiri_per_kisi,
+    w_vardiya_min_kontenjan,
+    w_alan_kontenjan_sapma,
+    w_gunluk_denge,
+    w_alan_denklik,
+    w_saat_denge,
+    w_cuma,
+    w_cumartesi,
+    w_pazar,
+    w_tatil,
+    w_iki_gun_bosluk,
+    w_birlikte_odul,
+    w_esnek_ayri,
+    w_tercih,
+)
 
 
 @dataclass
@@ -23,6 +41,7 @@ class VardiyaTanimi:
     isim: str
     baslangic: str = "08:00"
     bitis: str = "16:00"
+    minimum_staffing: int = 1
     
     @property
     def saat(self) -> int:
@@ -45,6 +64,7 @@ class AlanTanimi:
     isim: str
     gunluk_kontenjan: int = 1
     max_kontenjan: int = None
+    minimum_staffing: int = 1
     kidem_kurallari: Dict[str, Dict[str, int]] = field(default_factory=dict)
     vardiya_tipleri: List[str] = field(default_factory=list)
 
@@ -56,36 +76,36 @@ class SolverConfig:
     min_kisi_per_gun: int = 1
     ardisik_yasak: bool = True
     gunasiri_limit_aktif: bool = True
-    max_gunasiri_per_kisi: int = 1
+    max_gunasiri_per_kisi: int = max_gunasiri_per_kisi
 
     # Minimum staffing enforcement
     enforce_minimum_staffing: bool = True  # Hard constraint if True, soft if False
-    w_vardiya_min_kontenjan: int = 50000  # Penalty for empty shifts when soft (very high)
+    w_vardiya_min_kontenjan: int = w_vardiya_min_kontenjan  # Penalty for empty shifts when soft (very high)
 
-    w_alan_kontenjan_sapma: int = 10000
-    w_gunluk_denge: int = 5000
-    w_saat_denge: int = 3000
+    w_alan_kontenjan_sapma: int = w_alan_kontenjan_sapma
+    w_gunluk_denge: int = w_gunluk_denge
+    w_saat_denge: int = w_saat_denge
 
     hafta_sonu_dengesi_aktif: bool = True
-    w_cuma: int = 1000
-    w_cumartesi: int = 1000
-    w_pazar: int = 1000
+    w_cuma: int = w_cuma
+    w_cumartesi: int = w_cumartesi
+    w_pazar: int = w_pazar
 
     tatil_dengesi_aktif: bool = True
-    w_tatil: int = 200
+    w_tatil: int = w_tatil
 
     iki_gun_bosluk_aktif: bool = True
-    w_iki_gun_bosluk: int = 300
+    w_iki_gun_bosluk: int = w_iki_gun_bosluk
 
-    w_birlikte_odul: int = 30
-    w_esnek_ayri: int = 800
-    w_tercih: int = 2
-    w_alan_denklik: int = 800
+    w_birlikte_odul: int = w_birlikte_odul
+    w_esnek_ayri: int = w_esnek_ayri
+    w_tercih: int = w_tercih
+    w_alan_denklik: int = w_alan_denklik
 
     saat_bazli_denge: bool = True
 
-    max_sure_saniye: float = 60.0
-    thread_sayisi: int = 8
+    max_sure_saniye: float = max_sure_saniye
+    thread_sayisi: int = thread_sayisi
 
 
 @dataclass
@@ -318,7 +338,7 @@ class NobetSolver:
                             self.model.Add(self.x[p, g, a_idx, v_idx] == 0)
     
     def _vardiya_minimum_kontenjan_hard(self):
-        """Her vardiyada (her alanda) günde en az 1 kişi olmalı - HARD CONSTRAINT"""
+        """Her vardiyada (her alanda) günde en az minimum_staffing kişi olmalı - HARD CONSTRAINT"""
         for g in range(1, self.gun_sayisi + 1):
             for a in range(self.n_alan):
                 for v in range(self.n_vardiya):
@@ -329,13 +349,16 @@ class NobetSolver:
                         # Alan için vardiya kısıtı varsa ve bu vardiya listede yoksa atla
                         if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
                             continue
+                        min_required = max(alan.minimum_staffing, vardiya.minimum_staffing)
+                    else:
+                        min_required = self.input.vardiyalar[v].minimum_staffing if self.input.vardiya_modu else 1
 
-                    # Bu gün/alan/vardiya için en az 1 kişi
+                    # Bu gün/alan/vardiya için en az min_required kişi
                     toplam = sum(self.x[p, g, a, v] for p in range(self.n_personel))
-                    self.model.Add(toplam >= 1)
+                    self.model.Add(toplam >= min_required)
 
     def _vardiya_minimum_kontenjan_soft(self):
-        """Her vardiyada (her alanda) günde en az 1 kişi olmalı - SOFT CONSTRAINT"""
+        """Her vardiyada (her alanda) günde en az minimum_staffing kişi olmalı - SOFT CONSTRAINT"""
         w = self.input.config.w_vardiya_min_kontenjan
         for g in range(1, self.gun_sayisi + 1):
             for a in range(self.n_alan):
@@ -347,13 +370,15 @@ class NobetSolver:
                         # Alan için vardiya kısıtı varsa ve bu vardiya listede yoksa atla
                         if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
                             continue
+                        min_required = max(alan.minimum_staffing, vardiya.minimum_staffing)
+                    else:
+                        min_required = self.input.vardiyalar[v].minimum_staffing if self.input.vardiya_modu else 1
 
-                    # Soft penalty for empty slots
-                    bos = self.model.NewBoolVar(f"bos_{g}_{a}_{v}")
+                    # Soft penalty for each missing person below minimum
                     toplam = sum(self.x[p, g, a, v] for p in range(self.n_personel))
-                    # bos = 1 if toplam == 0 (empty shift)
-                    self.model.Add(bos == (toplam == 0))
-                    self.objective_terms.append(bos * w)
+                    eksik = self.model.NewIntVar(0, min_required, f"eksik_{g}_{a}_{v}")
+                    self.model.Add(eksik >= min_required - toplam)
+                    self.objective_terms.append(eksik * w)
     
     def _kidem_kurallari(self):
         for a_idx, alan in enumerate(self.input.alanlar):

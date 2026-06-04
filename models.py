@@ -23,6 +23,7 @@ class VardiyaTipi:
     baslangic: str = "08:00"  # "HH:MM" formatında
     bitis: str = "16:00"      # "HH:MM" formatında
     renk: str = "#808080"
+    minimum_staffing: int = 1  # Bu vardiya tipinde en az kaç kişi olmalı
     
     @property
     def saat(self) -> int:
@@ -48,7 +49,8 @@ class VardiyaTipi:
             "isim": self.isim,
             "baslangic": self.baslangic,
             "bitis": self.bitis,
-            "renk": self.renk
+            "renk": self.renk,
+            "minimum_staffing": self.minimum_staffing
         }
     
     @classmethod
@@ -57,7 +59,8 @@ class VardiyaTipi:
             isim=data["isim"],
             baslangic=data.get("baslangic", "08:00"),
             bitis=data.get("bitis", "16:00"),
-            renk=data.get("renk", "#808080")
+            renk=data.get("renk", "#808080"),
+            minimum_staffing=data.get("minimum_staffing", 1)
         )
 
 
@@ -131,6 +134,7 @@ class Alan:
     max_kontenjan: int = None  # Maksimum kişi sayısı (None = sınırsız) - vardiya başına
     renk: str = "#808080"      # UI'da gösterim için (hex renk kodu)
     aktif: bool = True         # Devre dışı bırakılabilir
+    minimum_staffing: int = 1  # Bu alanda her vardiya için en az kaç kişi olmalı
     
     # Aşama 2: Kıdem kuralları - her gruptan günde min/max kaç kişi
     kidem_kurallari: Dict[str, Dict[str, int]] = field(default_factory=dict)
@@ -145,6 +149,7 @@ class Alan:
             "max_kontenjan": self.max_kontenjan,
             "renk": self.renk,
             "aktif": self.aktif,
+            "minimum_staffing": self.minimum_staffing,
             "kidem_kurallari": self.kidem_kurallari,
             "vardiya_tipleri": self.vardiya_tipleri
         }
@@ -157,6 +162,7 @@ class Alan:
             max_kontenjan=data.get("max_kontenjan"),
             renk=data.get("renk", "#808080"),
             aktif=data.get("aktif", True),
+            minimum_staffing=data.get("minimum_staffing", 1),
             kidem_kurallari=data.get("kidem_kurallari", {}),
             vardiya_tipleri=data.get("vardiya_tipleri", [])
         )
