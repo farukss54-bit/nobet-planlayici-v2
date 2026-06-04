@@ -12,7 +12,8 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from models import AylikPlan
 from utils import (
     ay_gun_sayisi, resmi_tatiller, gun_parse,
-    hafta_gunu_adi, tum_hafta_gunleri, hafta_gunu_numarasi
+    hafta_gunu_adi, tum_hafta_gunleri, hafta_gunu_numarasi,
+    hesapla_otomatik_hedef
 )
 from storage import aylik_plani_kaydet
 from solver import (
@@ -49,7 +50,7 @@ def _cozum_olustur():
 
     gun_sayisi = ay_gun_sayisi(yil, ay)
 
-    # Hedefler - öncelik: kişisel > kıdem grubu > genel varsayılan
+    # Hedefler - öncelik: kişisel > otomatik > kıdem grubu > genel varsayılan
     hedefler = {}  # Toplam nöbet hedefi
     vardiya_hedefleri = {}  # {kisi: {vardiya: hedef}} - vardiya bazlı hedefler
 
@@ -69,14 +70,28 @@ def _cozum_olustur():
         for g in kidem_gruplari
     }
 
+    # Otomatik hedef hesaplama (eğer aktifse)
+    otomatik_aktif = st.session_state.get("otomatik_hedef", True)
+    otomatik_hedefler = {}
+    if otomatik_aktif:
+        alanlar_data = st.session_state.get("alanlar", [])
+        izin_map = st.session_state.get("izin_map", {})
+        ardisik = st.session_state.get("ardisik_yasak", True)
+        otomatik_hedefler = hesapla_otomatik_hedef(
+            gun_sayisi, alanlar_data, vardiyalar_data, personeller, izin_map, ardisik
+        )
+
     for p in personeller:
         # Önce kişisel hedefe bak
         kisisel_hedef = st.session_state.get("personel_targets", {}).get(p)
         kidem = personel_kidem.get(p)
 
         if kisisel_hedef is not None and kisisel_hedef != default_target:
-            # Kişisel hedef var
+            # Kişisel hedef var (kullanıcı override etmiş)
             hedefler[p] = kisisel_hedef
+        elif otomatik_aktif and p in otomatik_hedefler:
+            # Otomatik hesaplanan hedef
+            hedefler[p] = otomatik_hedefler[p]
         elif kidem and kidem in grup_hedefleri:
             # Kıdem grubunun hedefine bak
             hedefler[p] = grup_hedefleri[kidem]

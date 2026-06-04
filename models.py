@@ -283,6 +283,9 @@ class Ayarlar:
     iki_gun_bosluk_aktif: bool = True
     iki_gun_bosluk_tercihi: int = 300
     
+    # Otomatik hedef hesaplama
+    otomatik_hedef: bool = True
+    
     def to_dict(self) -> dict:
         return {
             "personeller": [p.to_dict() for p in self.personeller],
@@ -306,7 +309,8 @@ class Ayarlar:
             "w_pazar": self.w_pazar,
             "tatil_dengesi": self.tatil_dengesi,
             "iki_gun_bosluk_aktif": self.iki_gun_bosluk_aktif,
-            "iki_gun_bosluk_tercihi": self.iki_gun_bosluk_tercihi
+            "iki_gun_bosluk_tercihi": self.iki_gun_bosluk_tercihi,
+            "otomatik_hedef": self.otomatik_hedef
         }
     
     @classmethod
@@ -333,7 +337,8 @@ class Ayarlar:
             w_pazar=data.get("w_pazar", 1000),
             tatil_dengesi=data.get("tatil_dengesi", True),
             iki_gun_bosluk_aktif=data.get("iki_gun_bosluk_aktif", True),
-            iki_gun_bosluk_tercihi=data.get("iki_gun_bosluk_tercihi", 300)
+            iki_gun_bosluk_tercihi=data.get("iki_gun_bosluk_tercihi", 300),
+            otomatik_hedef=data.get("otomatik_hedef", True)
         )
     
     def personel_isimleri(self) -> List[str]:

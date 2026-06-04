@@ -4,8 +4,11 @@ Kişiler sekmesi — Personel listesi ve hedef nöbet sayıları.
 
 import streamlit as st
 
+from storage import ayarlari_kaydet
+from utils import personel_referanslarini_temizle, hesapla_otomatik_hedef, ay_gun_sayisi
 
-def render_personel_tab():
+
+def render_personel_tab(session_to_ayarlar_func=None):
     st.subheader("👥 Kişiler ve Hedefler")
 
     col1, col2, col3 = st.columns(3)
@@ -25,6 +28,18 @@ def render_personel_tab():
             key="varsayilan_hedef"
         )
 
+    # Otomatik hedef hesaplama kontrolü
+    otomatik_aktif = st.toggle(
+        "🧮 Otomatik hedef hesaplama",
+        value=st.session_state.get("otomatik_hedef", True),
+        key="otomatik_hedef_toggle",
+        help="Açıkken solver, kişisel hedef girilmemiş personeller için otomatik hesaplanan değeri kullanır."
+    )
+    if otomatik_aktif != st.session_state.get("otomatik_hedef", True):
+        st.session_state["otomatik_hedef"] = otomatik_aktif
+        if session_to_ayarlar_func is not None:
+            ayarlari_kaydet(session_to_ayarlar_func())
+
     st.divider()
 
     # Personel sayısı
@@ -38,6 +53,8 @@ def render_personel_tab():
 
     # Listeyi güncelle
     current_list = st.session_state["personel_list"]
+    degisiklik_yapildi = False
+
     if len(current_list) < personel_sayisi:
         for i in range(len(current_list), personel_sayisi):
             current_list.append(f"Personel {i+1}")
@@ -45,15 +62,42 @@ def render_personel_tab():
         removed = current_list[personel_sayisi:]
         st.session_state["personel_list"] = current_list[:personel_sayisi]
 
-        # Clean up associated data for removed personnel
+        # Silinen personellerin referanslarını temizle
         for p in removed:
-            for key in ["personel_targets", "weekday_block_map", "izin_map",
-                       "prefer_map", "personel_alan_yetkinlikleri",
-                       "personel_kidem_gruplari", "personel_vardiya_kisitlari"]:
-                if key in st.session_state and p in st.session_state[key]:
-                    del st.session_state[key][p]
+            personel_referanslarini_temizle(st.session_state, p)
+            degisiklik_yapildi = True
 
     st.session_state["personel_sayisi"] = personel_sayisi
+
+    # Otomatik hesaplama butonu
+    if st.session_state.get("otomatik_hedef", True):
+        btn_col1, btn_col2 = st.columns([1, 3])
+        with btn_col1:
+            if st.button("🧮 Hedefleri Otomatik Hesapla", use_container_width=True):
+                yil = int(st.session_state.get("yil", 2024))
+                ay = int(st.session_state.get("ay", 1))
+                gun_sayisi = ay_gun_sayisi(yil, ay)
+                alanlar = st.session_state.get("alanlar", [])
+                vardiyalar = st.session_state.get("vardiya_tipleri", [])
+                izin_map = st.session_state.get("izin_map", {})
+                personeller = st.session_state.get("personel_list", [])
+                ardisik = st.session_state.get("ardisik_yasak", True)
+
+                otomatik_hedefler = hesapla_otomatik_hedef(
+                    gun_sayisi, alanlar, vardiyalar, personeller, izin_map, ardisik
+                )
+
+                st.session_state["personel_targets"] = otomatik_hedefler
+                if otomatik_hedefler:
+                    ort_hedef = round(sum(otomatik_hedefler.values()) / len(otomatik_hedefler))
+                    st.session_state["varsayilan_hedef"] = max(1, ort_hedef)
+                    degisiklik_yapildi = True
+
+                if session_to_ayarlar_func is not None:
+                    ayarlari_kaydet(session_to_ayarlar_func())
+                st.rerun()
+        with btn_col2:
+            st.caption("💡 Butona basınca herkese 'toplam ihtiyaç ÷ personel' formülüyle eşit nöbet dağıtılır. Sonra dilediğiniz kişiyi elle değiştirebilirsiniz.")
 
     st.caption("Her personelin adını ve hedef nöbet sayısını girin:")
 
@@ -62,11 +106,16 @@ def render_personel_tab():
     for i in range(personel_sayisi):
         cols = st.columns([3, 1])
         with cols[0]:
-            st.session_state["personel_list"][i] = st.text_input(
+            eski_isim = st.session_state["personel_list"][i]
+            yeni_isim = st.text_input(
                 f"{i+1}. Personel",
                 value=st.session_state["personel_list"][i],
                 key=f"personel_name_{i}"
             )
+            st.session_state["personel_list"][i] = yeni_isim
+            if eski_isim != yeni_isim:
+                personel_referanslarini_temizle(st.session_state, eski_isim, yeni_isim)
+                degisiklik_yapildi = True
         with cols[1]:
             p_name = st.session_state["personel_list"][i]
             current_target = st.session_state.get("personel_targets", {}).get(p_name, default_target)
@@ -81,3 +130,7 @@ def render_personel_tab():
                 st.session_state.setdefault("personel_targets", {})[p_name] = new_target
             elif p_name in st.session_state.get("personel_targets", {}):
                 st.session_state["personel_targets"].pop(p_name, None)
+
+    # Değişiklik varsa ayarları otomatik kaydet
+    if degisiklik_yapildi and session_to_ayarlar_func is not None:
+        ayarlari_kaydet(session_to_ayarlar_func())

@@ -9,6 +9,7 @@ import streamlit as st
 # Yerel modüller
 from models import Ayarlar, Personel, EslesmeTercihi, Alan, KidemGrubu, VardiyaTipi
 from storage import ayarlari_yukle_veya_varsayilan
+from utils import yetim_personel_temizligi_yap
 from streamlit_integration import (
     get_demo_sidebar,
     render_demo_detail_modal,
@@ -207,8 +208,12 @@ def init_session_state():
         st.session_state["tatil_dengesi"] = ayarlar.tatil_dengesi
         st.session_state["iki_gun_bosluk_aktif"] = ayarlar.iki_gun_bosluk_aktif
         st.session_state["w_gap3"] = ayarlar.iki_gun_bosluk_tercihi
+        st.session_state["otomatik_hedef"] = ayarlar.otomatik_hedef
 
         st.session_state["initialized"] = True
+
+        # Orphaned key cleanup: mevcut personel listesinde olmayan isimleri temizle
+        yetim_personel_temizligi_yap(st.session_state, st.session_state.get("personel_list", []))
 
 
 def session_to_ayarlar() -> Ayarlar:
@@ -300,7 +305,8 @@ def session_to_ayarlar() -> Ayarlar:
         w_pazar=st.session_state.get("w_pazar", 1000),
         tatil_dengesi=st.session_state.get("tatil_dengesi", True),
         iki_gun_bosluk_aktif=st.session_state.get("iki_gun_bosluk_aktif", True),
-        iki_gun_bosluk_tercihi=st.session_state.get("w_gap3", 300)
+        iki_gun_bosluk_tercihi=st.session_state.get("w_gap3", 300),
+        otomatik_hedef=st.session_state.get("otomatik_hedef", True)
     )
 
 
@@ -322,7 +328,7 @@ tabs = st.tabs(["👥 Kişiler", "🎖️ Kıdem", "🏢 Alanlar", "⏰ Vardiyal
 
 
 with tabs[0]:
-    render_personel_tab()
+    render_personel_tab(session_to_ayarlar)
 
 with tabs[1]:
     render_kidem_tab()
