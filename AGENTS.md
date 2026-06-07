@@ -158,6 +158,7 @@ Demo modu aktifken `_demo_aktif` flag'i `True` olur ve kayıtlı dosyadan otomat
 - **Veri modelleri:** `dataclasses` kullanılır. Her modelde `to_dict()` ve `from_dict()` olmalıdır.
 - **Streamlit session state:** UI durumu `st.session_state` sözlüğünde tutulur. Anahtar isimleri snake_case Türkçe'dir.
 - **Solver ağırlıkları:** `w_` öneki ile belirtilen penalty/reward değerleri `SolverConfig` içindedir.
+- **Determinizm:** `SolverConfig.random_seed` ve `pin_search_workers` ile aynı girdi her zaman aynı çizelgeyi üretir. Not: Aynı `ortools` sürümü için garantilidir; paket yükseltmeleri farklı (hâlâ optimal) çizelge üretebilir. `requirements.txt`'te sürüm sabitlenmiştir.
 - **Döndürülen sonuç formatları:**
   - Tek alan: `{gun: ["Dr. A", "Dr. B"]}`
   - Çoklu alan: `{gun: {"Yeşil": ["Dr. A"], "Kırmızı": ["Dr. B"]}}`
@@ -171,9 +172,10 @@ Demo modu aktifken `_demo_aktif` flag'i `True` olur ve kayıtlı dosyadan otomat
 Projede **formal bir test çerçevesi (pytest, unittest vb.) yoktur.** Testler şu şekilde yapılır:
 
 1. **Sentetik senaryolar:** `scenarios.py` ile üretilen veriler solver'a beslenir
-2. **Demo modu:** Streamlit UI üzerinden farklı zorluklarda senaryolar çalıştırılır
-3. **Manuel UI testi:** Farklı sekme kombinasyonları ile çözüm üretilip sonuçlar kontrol edilir
-4. **Teşhis sistemi:** `solver.py` içindeki `gelismis_teshis()` çözüm bulunamadığında olası nedenleri raporlar
+2. **Property-based testler:** `tests/test_solver_properties.py` ile solver invariant'ları otomatik doğrulanır (`pytest`)
+3. **Demo modu:** Streamlit UI üzerinden farklı zorluklarda senaryolar çalıştırılır
+4. **Manuel UI testi:** Farklı sekme kombinasyonları ile çözüm üretilip sonuçlar kontrol edilir
+5. **Teşhis sistemi:** `solver.py` içindeki `gelismis_teshis()` çözüm bulunamadığında olası nedenleri raporlar
 
 Yeni özellik eklerken:
 - `scenarios.py`'ye uygun zorluk parametreleri eklenmeli
@@ -217,6 +219,8 @@ Yeni özellik eklerken:
 | `hafta_sonu_dengesi` | `bool` | Hafta sonu dengesi aktif |
 | `saat_bazli_denge` | `bool` | Saat bazlı denge aktif |
 | `iki_gun_bosluk_aktif` | `bool` | 2 gün boşluk tercihi aktif |
+| `random_seed` | `int` | CP-SAT deterministik çözüm için sabit tohum (varsayılan 42) |
+| `pin_search_workers` | `bool` | True ise paralel arama tek işçiye düşer (reproducibility) |
 
 ---
 

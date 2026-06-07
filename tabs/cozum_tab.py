@@ -151,6 +151,8 @@ def _cozum_olustur():
     # Çoklu alan modu kontrolü
     alan_modu_aktif = st.session_state.get("alan_modu_aktif", False)
     alanlar_data = st.session_state.get("alanlar", [])
+    vardiyalar_data = st.session_state.get("vardiya_tipleri", [])
+    vardiya_sayisi = len(vardiyalar_data) if vardiyalar_data else 1
 
     if alan_modu_aktif and alanlar_data:
         alanlar = [
@@ -165,15 +167,16 @@ def _cozum_olustur():
             for a in alanlar_data
         ]
         toplam_kontenjan = sum(a.gunluk_kontenjan for a in alanlar)
-        gereken_toplam = toplam_kontenjan * gun_sayisi
+        gereken_toplam = toplam_kontenjan * gun_sayisi * vardiya_sayisi
 
         if toplam_hedef < gereken_toplam:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {toplam_kontenjan}/gün x {gun_sayisi} gün)")
+            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {toplam_kontenjan}/gün x {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
             st.stop()
     else:
         alanlar = []
-        if toplam_hedef < gun_sayisi:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gün sayısı ({gun_sayisi})")
+        gereken_toplam = gun_sayisi * vardiya_sayisi
+        if toplam_hedef < gereken_toplam:
+            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
             st.stop()
 
     # Vardiya tipleri
@@ -288,7 +291,8 @@ def _cozum_olustur():
             personel_alan_yetkinlikleri=personel_alan_yetkinlikleri,
             personel_vardiya_kisitlari=personel_vardiya_kisitlari,
             personel_kidem_gruplari=st.session_state.get("personel_kidem_gruplari", {}),
-            ardisik_yasak=st.session_state.get("ardisik_yasak", True)
+            ardisik_yasak=st.session_state.get("ardisik_yasak", True),
+            enforce_minimum_staffing=st.session_state.get("enforce_minimum_staffing", True)
         )
 
         st.warning("🔍 **Tespit Edilen Sorunlar:**")

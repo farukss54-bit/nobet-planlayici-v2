@@ -14,7 +14,10 @@ Değerleri değiştirip uygulamayı yeniden başlatabilirsiniz.
 # Daha karmaşık problemlerde artırılabilir
 max_sure_saniye = 60.0
 
-# Paralel arama işçi sayısı (CPU çekirdek sayısına göre ayarlanabilir)
+# Paralel arama işçi sayısı.
+# SABIT tutulmalı; makineye göre dinamikleştirmek (örn. os.cpu_count())
+# farklı num_search_workers değerleriyle farklı (hâlâ optimal) çizelgeler
+# üreteceğinden makineler-arası determinizmi sessizce bozar.
 thread_sayisi = 8
 
 # =============================================================================
@@ -24,6 +27,12 @@ thread_sayisi = 8
 # Kişi başına aylık maksimum günaşırı nöbet sayısı
 # Günaşırı = 1 gün arayla nöbet (örn: Pazartesi ve Çarşamba)
 max_gunasiri_per_kisi = 1
+
+# Vardiya modunda iki atama arası minimum dinlenme süresi (saat)
+minimum_dinlenme_saati = 12
+
+# Vardiya modunda peş peşe maksimum çalışma günü (soft limit)
+max_ardisik_calisma_gunu = 5
 
 # =============================================================================
 # SOFT CONSTRAINT AĞIRLIKLARI (Penalty / Reward)
@@ -69,3 +78,10 @@ w_birlikte_odul = 30
 w_esnek_ayri = 800
 # Personelin tercih ettiği günde nöbet tutması ödül ağırlığı
 w_tercih = 2
+
+# --- Ardışık Çalışma Günü Sınırı (Soft) ---
+# Vardiya modunda peş peşe çalışma günü limiti aşım cezası
+w_max_ardisik = 2000
+
+# CP-SAT deterministik çözüm için sabit rastgelelik tohumu
+random_seed = 42

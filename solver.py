@@ -14,11 +14,14 @@ from ortools.sat.python import cp_model
 from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, field
 
-from utils import ay_gun_sayisi, gunleri_weekday_ile_filtrele
+from utils import ay_gun_sayisi, gunleri_weekday_ile_filtrele, kisinin_max_atama
 from config import (
     max_sure_saniye,
     thread_sayisi,
+    random_seed,
     max_gunasiri_per_kisi,
+    minimum_dinlenme_saati,
+    max_ardisik_calisma_gunu,
     w_vardiya_min_kontenjan,
     w_alan_kontenjan_sapma,
     w_gunluk_denge,
@@ -32,6 +35,7 @@ from config import (
     w_birlikte_odul,
     w_esnek_ayri,
     w_tercih,
+    w_max_ardisik,
 )
 
 
@@ -78,6 +82,10 @@ class SolverConfig:
     gunasiri_limit_aktif: bool = True
     max_gunasiri_per_kisi: int = max_gunasiri_per_kisi
 
+    # Vardiya-bilinçli dinlenme kuralları
+    minimum_dinlenme_saati: int = minimum_dinlenme_saati
+    max_ardisik_calisma_gunu: int = max_ardisik_calisma_gunu
+
     # Minimum staffing enforcement
     enforce_minimum_staffing: bool = True  # Hard constraint if True, soft if False
     w_vardiya_min_kontenjan: int = w_vardiya_min_kontenjan  # Penalty for empty shifts when soft (very high)
@@ -106,6 +114,8 @@ class SolverConfig:
 
     max_sure_saniye: float = max_sure_saniye
     thread_sayisi: int = thread_sayisi
+    random_seed: int = random_seed
+    pin_search_workers: bool = False
 
 
 @dataclass
@@ -249,10 +259,11 @@ class NobetSolver:
                            if g not in self.input.izinler.get(isim, set())]
             musait_gun_sayisi = len(musait_gunler)
 
-            if self.input.config.ardisik_yasak:
-                max_mumkun = (musait_gun_sayisi + 1) // 2
-            else:
-                max_mumkun = musait_gun_sayisi
+            max_mumkun = kisinin_max_atama(
+                musait_gun_sayisi,
+                self.input.vardiya_modu,
+                self.input.config.ardisik_yasak
+            )
 
             # Vardiya bazlı hedef var mı?
             vardiya_hedef = self.input.vardiya_hedefleri.get(isim, {})
@@ -291,7 +302,7 @@ class NobetSolver:
     
     def _izin_gunleri(self):
         for p_idx, isim in enumerate(self.input.personeller):
-            for gun in self.input.izinler.get(isim, set()):
+            for gun in sorted(self.input.izinler.get(isim, set())):
                 if 1 <= gun <= self.gun_sayisi:
                     for a in range(self.n_alan):
                         for v in range(self.n_vardiya):
@@ -384,7 +395,7 @@ class NobetSolver:
         for a_idx, alan in enumerate(self.input.alanlar):
             if not alan.kidem_kurallari:
                 continue
-            for grup_isim, kurallar in alan.kidem_kurallari.items():
+            for grup_isim, kurallar in sorted(alan.kidem_kurallari.items()):
                 min_k = kurallar.get("min", 0)
                 max_k = kurallar.get("max")
                 
@@ -402,11 +413,77 @@ class NobetSolver:
                         self.model.Add(toplam <= max_k)
     
     def _ardisik_gun_yasagi(self):
+        if not self.input.vardiya_modu:
+            # Nöbet modu: blanket ardışık gün yasağı (eski davranış)
+            for p in range(self.n_personel):
+                for g in range(1, self.gun_sayisi):
+                    bugun = sum(self.x[p, g, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
+                    yarin = sum(self.x[p, g+1, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
+                    self.model.Add(bugun + yarin <= 1)
+        else:
+            # Vardiya modu: zaman-bazlı dinlenme kuralı + max ardışık çalışma soft limit
+            self._vardiya_dinlenme_kurali()
+            self._max_ardisik_calisma_gunu_soft()
+
+    def _vardiyalar_arasi_dinlenme_saati(self, v1: VardiyaTanimi, v2: VardiyaTanimi) -> int:
+        """v1 bitişinden v2 başlangıcına (ertesi gün) olan dinlenme süresini saat olarak döndürür."""
+        b1_saat, b1_dk = map(int, v1.baslangic.split(":"))
+        s1_saat, s1_dk = map(int, v1.bitis.split(":"))
+        bitis1_dk = s1_saat * 60 + s1_dk
+        baslangic1_dk = b1_saat * 60 + b1_dk
+        if bitis1_dk <= baslangic1_dk:
+            bitis1_dk += 24 * 60
+
+        b2_saat, b2_dk = map(int, v2.baslangic.split(":"))
+        baslangic2_dk = b2_saat * 60 + b2_dk + 24 * 60  # ertesi gün
+
+        dinlenme_dk = baslangic2_dk - bitis1_dk
+        return dinlenme_dk // 60
+
+    def _vardiya_dinlenme_kurali(self):
+        """Vardiya modunda: yetersiz dinlenmeli ardışık atamaları yasaklar."""
+        min_saat = self.input.config.minimum_dinlenme_saati
+        if min_saat <= 0:
+            return
+
+        # Önceden hesapla: hangi vardiya çiftleri yetersiz dinlenmeye sahip
+        yetersiz_ciftler = []
+        for v1_idx, v1 in enumerate(self.input.vardiyalar):
+            for v2_idx, v2 in enumerate(self.input.vardiyalar):
+                dinlenme = self._vardiyalar_arasi_dinlenme_saati(v1, v2)
+                if dinlenme < min_saat:
+                    yetersiz_ciftler.append((v1_idx, v2_idx))
+
         for p in range(self.n_personel):
             for g in range(1, self.gun_sayisi):
-                bugun = sum(self.x[p, g, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
-                yarin = sum(self.x[p, g+1, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
-                self.model.Add(bugun + yarin <= 1)
+                for v1_idx, v2_idx in yetersiz_ciftler:
+                    bugun = sum(self.x[p, g, a, v1_idx] for a in range(self.n_alan))
+                    yarin = sum(self.x[p, g + 1, a, v2_idx] for a in range(self.n_alan))
+                    self.model.Add(bugun + yarin <= 1)
+
+    def _max_ardisik_calisma_gunu_soft(self):
+        """Vardiya modunda: peş peşe çalışma günü limitini soft constraint olarak uygular."""
+        limit = self.input.config.max_ardisik_calisma_gunu
+        w = w_max_ardisik
+        if limit <= 0:
+            return
+
+        # Pencere boyutu = limit + 1; herhangi ardışık (limit+1) günde > limit atama varsa ceza
+        window_size = limit + 1
+        if window_size > self.gun_sayisi:
+            return
+
+        for p in range(self.n_personel):
+            for g in range(1, self.gun_sayisi - window_size + 2):
+                pencere_toplam = sum(
+                    self.x[p, gun, a, v]
+                    for gun in range(g, g + window_size)
+                    for a in range(self.n_alan)
+                    for v in range(self.n_vardiya)
+                )
+                asim = self.model.NewIntVar(0, window_size, f"ardisik_asim_{p}_{g}")
+                self.model.Add(asim >= pencere_toplam - limit)
+                self.objective_terms.append(asim * w)
     
     def _gunasiri_limiti(self):
         max_ga = self.input.config.max_gunasiri_per_kisi
@@ -537,7 +614,7 @@ class NobetSolver:
         if self.input.config.w_pazar > 0:
             self._adalet_ekle(gunleri_weekday_ile_filtrele(yil, ay, 6), self.input.config.w_pazar, "paz")
         if self.input.config.tatil_dengesi_aktif and self.input.config.w_tatil > 0:
-            self._adalet_ekle(list(self.input.tatiller), self.input.config.w_tatil, "tatil")
+            self._adalet_ekle(sorted(self.input.tatiller), self.input.config.w_tatil, "tatil")
     
     def _adalet_ekle(self, gunler: List[int], agirlik: int, tag: str):
         if not gunler:
@@ -604,7 +681,7 @@ class NobetSolver:
     def _tercih_edilen_gunler(self):
         w = self.input.config.w_tercih
         for p_idx, isim in enumerate(self.input.personeller):
-            for g in self.input.tercih_edilen.get(isim, set()):
+            for g in sorted(self.input.tercih_edilen.get(isim, set())):
                 if 1 <= g <= self.gun_sayisi:
                     for a in range(self.n_alan):
                         for v in range(self.n_vardiya):
@@ -613,7 +690,11 @@ class NobetSolver:
     def _coz_ve_sonuc_al(self) -> Dict:
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = self.input.config.max_sure_saniye
-        solver.parameters.num_search_workers = self.input.config.thread_sayisi
+        solver.parameters.random_seed = self.input.config.random_seed
+        if self.input.config.pin_search_workers:
+            solver.parameters.num_search_workers = 1
+        else:
+            solver.parameters.num_search_workers = self.input.config.thread_sayisi
         
         status = solver.Solve(self.model)
         
@@ -691,7 +772,8 @@ def gelismis_teshis(
     personel_vardiya_kisitlari: Dict[str, List[str]] = None,
     personel_kidem_gruplari: Dict[str, str] = None,
     kidem_kurallari: Dict[str, Dict[str, Dict[str, int]]] = None,  # {alan: {grup: {min/max}}}
-    ardisik_yasak: bool = True
+    ardisik_yasak: bool = True,
+    enforce_minimum_staffing: bool = True
 ) -> List[TeshisSonucu]:
     """
     Çözüm bulunamadığında detaylı teşhis yapar.
@@ -715,11 +797,9 @@ def gelismis_teshis(
         musait_gunler = [g for g in range(1, gun_sayisi + 1) if g not in izinler.get(p, set())]
         musait_gun_sayisi = len(musait_gunler)
         
-        # Ardışık yasak varsa max nöbet = (müsait+1)/2
-        if ardisik_yasak:
-            max_mumkun = (musait_gun_sayisi + 1) // 2
-        else:
-            max_mumkun = musait_gun_sayisi
+        # Ardışık yasak varsa ve nöbet modundaysa max nöbet = (müsait+1)/2
+        vardiya_modu = bool(vardiyalar)
+        max_mumkun = kisinin_max_atama(musait_gun_sayisi, vardiya_modu, ardisik_yasak)
         
         toplam_hedef = hedefler.get(p, 0)
         
@@ -743,7 +823,7 @@ def gelismis_teshis(
             p_vardiya_hedef = vardiya_hedefleri[p]
             p_kisitlar = personel_vardiya_kisitlari.get(p, [])
             
-            for vardiya_isim, hedef in p_vardiya_hedef.items():
+            for vardiya_isim, hedef in sorted(p_vardiya_hedef.items()):
                 if hedef > 0 and p_kisitlar and vardiya_isim not in p_kisitlar:
                     sorunlar.append(TeshisSonucu(
                         tip="vardiya_uyumsuz",
@@ -823,7 +903,7 @@ def gelismis_teshis(
                 # Kıdem kuralları kontrolü
                 alan_kidem = alan.kidem_kurallari
                 if alan_kidem:
-                    for grup_isim, kurallar in alan_kidem.items():
+                    for grup_isim, kurallar in sorted(alan_kidem.items()):
                         min_k = kurallar.get("min", 0)
                         if min_k > 0:
                             # Bu gruptan bu alanda çalışabilecek müsait kişiler
@@ -916,15 +996,18 @@ def gelismis_teshis(
         toplam_kapasite = gun_sayisi
     
     if toplam_hedef < toplam_kapasite:
+        # Minimum staffing hard ise bu infeasible demektir
+        seviye = "error" if enforce_minimum_staffing else "warning"
         sorunlar.append(TeshisSonucu(
             tip="toplam_hedef_yetersiz",
-            seviye="warning",
+            seviye=seviye,
             gun=None,
             mesaj=f"Toplam hedef ({toplam_hedef}) < gereken kapasite ({toplam_kapasite}) - bazı slotlar boş kalabilir",
             detay={
                 "toplam_hedef": toplam_hedef,
                 "toplam_kapasite": toplam_kapasite,
-                "fark": toplam_kapasite - toplam_hedef
+                "fark": toplam_kapasite - toplam_hedef,
+                "enforce_minimum_staffing": enforce_minimum_staffing
             }
         ))
     elif toplam_hedef > toplam_kapasite:
@@ -949,7 +1032,7 @@ def gelismis_teshis(
                 g for g in range(1, gun_sayisi + 1) 
                 if g not in izinler.get(a, set()) and g not in izinler.get(b, set())
             ]
-            max_ortak = (len(ortak_gunler) + 1) // 2 if ardisik_yasak else len(ortak_gunler)
+            max_ortak = kisinin_max_atama(len(ortak_gunler), vardiya_modu, ardisik_yasak)
             
             if max_ortak < min_k:
                 sorunlar.append(TeshisSonucu(

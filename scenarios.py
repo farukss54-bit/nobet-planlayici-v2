@@ -21,6 +21,8 @@ from datetime import date
 import calendar
 import json
 
+from utils import kisinin_max_atama
+
 
 # =============================================================================
 # TÜRKÇE GÜN ADLARI (Senin app'inin kullandığı format)
@@ -220,15 +222,11 @@ class ScenarioGenerator:
             personel_list, profil
         )
         
-        want_pairs_list = self._uret_want_pairs(
-            personel_list, no_pairs_list, soft_no_pairs_list, profil
-        )
-        
         manuel_tatiller = self._uret_manuel_tatiller(yil, ay, gun_sayisi)
         
         # Alan ve vardiya modları
         if profil["alan_aktif"]:
-            alanlar = self._uret_alanlar_sinirli(len(personel_list), gun_sayisi)
+            alanlar = self._uret_alanlar_sinirli(len(personel_list), gun_sayisi, profil.get("vardiya_aktif", False))
             personel_alan_yetkinlikleri = self._uret_alan_yetkinlikleri(
                 personel_list, alanlar
             )
@@ -265,7 +263,7 @@ class ScenarioGenerator:
         # Kişi başı ORTALAMA hedef (kapasiteyi tam karşılayacak şekilde)
         kisi_basi_ortalama = toplam_kapasite / len(personel_list)
         
-        # Kıdem gruplarını oluştur - toplam hedef = kapasite olacak şekilde
+        # Kıdem gruplarını oluştur - toplam hedef kapasiteyi aşmayacak şekilde
         kidem_gruplari, personel_kidem_gruplari = self._uret_kidem_dengeli(
             personel_list, vardiya_tipleri, kisi_basi_ortalama, toplam_kapasite
         )
@@ -275,6 +273,11 @@ class ScenarioGenerator:
             varsayilan_hedef = min(25, int(sum(g.get("varsayilan_hedef", 8) for g in kidem_gruplari) / len(kidem_gruplari)))
         else:
             varsayilan_hedef = min(25, int(kisi_basi_ortalama))
+        
+        want_pairs_list = self._uret_want_pairs(
+            personel_list, no_pairs_list, soft_no_pairs_list, profil,
+            personel_targets, varsayilan_hedef
+        )
         
         return {
             # === ZORUNLU ANAHTARLAR ===
@@ -336,7 +339,8 @@ class ScenarioGenerator:
         Sadece bazı kişilere özel hedef verilir.
         """
         targets = {}
-        
+        vardiya_modu = profil.get("vardiya_aktif", False)
+
         # %20 kişiye özel hedef ver
         for personel in personel_list:
             if self.rng.random() < 0.20:
@@ -346,8 +350,12 @@ class ScenarioGenerator:
                     max(1, ortalama - 2),
                     ortalama + 2
                 )
-                targets[personel] = hedef
-        
+                # Max mümkün ile kırp (izinler henüz belli değil, conservative)
+                max_mumkun = kisinin_max_atama(gun_sayisi, vardiya_modu, ardisik_yasak=True)
+                hedef = min(hedef, max_mumkun)
+                if hedef > 0:
+                    targets[personel] = hedef
+
         return targets
     
     def _uret_weekday_block_map(
@@ -492,11 +500,14 @@ class ScenarioGenerator:
         personel_list: List[str],
         no_pairs_list: List[Dict],
         soft_no_pairs_list: List[Dict],
-        profil: dict
+        profil: dict,
+        personel_targets: Dict[str, int],
+        varsayilan_hedef: int
     ) -> List[Dict]:
         """
         Birlikte çalışması istenen çiftler.
         no_pairs ile çakışmaz.
+        min değeri her iki kişinin hedefine sığacak şekilde kırpılır.
         """
         # Yasaklı çiftleri set'e çevir
         yasakli = set()
@@ -512,11 +523,16 @@ class ScenarioGenerator:
                 cift = tuple(sorted([a, b]))
                 if cift not in yasakli:
                     yasakli.add(cift)  # Tekrar seçilmesin
-                    want_pairs_list.append({
-                        "a": a,
-                        "b": b,
-                        "min": self.rng.randint(2, 4)
-                    })
+                    hedef_a = personel_targets.get(a, varsayilan_hedef)
+                    hedef_b = personel_targets.get(b, varsayilan_hedef)
+                    min_k = self.rng.randint(2, 4)
+                    min_k = min(min_k, hedef_a, hedef_b)
+                    if min_k > 0:
+                        want_pairs_list.append({
+                            "a": a,
+                            "b": b,
+                            "min": min_k
+                        })
                     break
         
         return want_pairs_list
@@ -564,19 +580,22 @@ class ScenarioGenerator:
         tatiller.sort()
         return ", ".join(str(g) for g in tatiller)
     
-    def _uret_alanlar_sinirli(self, personel_sayisi: int, gun_sayisi: int) -> List[Dict]:
+    def _uret_alanlar_sinirli(self, personel_sayisi: int, gun_sayisi: int, vardiya_aktif: bool = False) -> List[Dict]:
         """
         Çalışma alanları üret - personel sayısına göre kapasite sınırlı.
-        Kural: Günlük toplam slot <= personel_sayisi * 0.6 (ardışık yasak için pay)
         """
         alan_isimleri = ["Acil", "Yoğun Bakım", "Poliklinik", "Ameliyathane", "Servis"]
         secilen = self.rng.sample(alan_isimleri, self.rng.randint(2, 3))
-        
-        # Maksimum günlük slot (3 vardiya varsayımıyla)
-        # Ardışık yasak nedeniyle kişi başı max ~15 nöbet/ay
-        max_aylik_nobet = personel_sayisi * 15
+
+        # Kişi başı max atama (moda göre)
+        if vardiya_aktif:
+            kisi_basi_max = gun_sayisi
+        else:
+            kisi_basi_max = 15  # ardışık yasak nedeniyle yaklaşık ~15
+
+        max_aylik_nobet = personel_sayisi * kisi_basi_max
         max_gunluk_slot = max_aylik_nobet // gun_sayisi
-        max_kontenjan_per_vardiya = max(1, max_gunluk_slot // 3)  # 3 vardiya için
+        max_kontenjan_per_vardiya = max(1, max_gunluk_slot // 3)  # 3 vardiya varsayımı
         
         alanlar = []
         toplam_kontenjan = 0
@@ -695,7 +714,7 @@ class ScenarioGenerator:
         toplam_kapasite: int
     ) -> Tuple[List[Dict], Dict[str, str]]:
         """
-        Kıdem grupları - toplam hedef >= kapasite olacak şekilde dengeli.
+        Kıdem grupları - toplam hedef kapasiteyi aşmayacak şekilde dengeli.
         """
         n = len(personel_list)
         
@@ -715,9 +734,8 @@ class ScenarioGenerator:
         n_orta = sum(1 for k in personel_kidem.values() if k == "Orta")
         n_yeni = sum(1 for k in personel_kidem.values() if k == "Yeni")
         
-        # Basit yaklaşım: Herkese eşit hedef ver, kapasiteyi karşılasın
-        # +2 ile garantiye al (kıdemliler -2 alacak)
-        base_hedef = (toplam_kapasite // n) + 2
+        # Kapasiteyi aşmayan temel hedef
+        base_hedef = max(1, toplam_kapasite // n)
         
         kidemli_hedef = max(1, base_hedef - 2)
         orta_hedef = base_hedef
@@ -727,6 +745,24 @@ class ScenarioGenerator:
         kidemli_hedef = max(1, min(25, kidemli_hedef))
         orta_hedef = max(1, min(25, orta_hedef))
         yeni_hedef = max(1, min(25, yeni_hedef))
+        
+        # Toplam hedef fiilen kapasiteyi aşıyor mu kontrol et; aşıyorsa oransal küçült
+        toplam_hedef_hesap = n_kidemli * kidemli_hedef + n_orta * orta_hedef + n_yeni * yeni_hedef
+        if toplam_hedef_hesap > toplam_kapasite and toplam_kapasite > 0:
+            oran = toplam_kapasite / toplam_hedef_hesap
+            kidemli_hedef = max(1, int(kidemli_hedef * oran))
+            orta_hedef = max(1, int(orta_hedef * oran))
+            yeni_hedef = max(1, int(yeni_hedef * oran))
+            # Kalan farkı düşür (yuvarlama hatası olabilir)
+            while (n_kidemli * kidemli_hedef + n_orta * orta_hedef + n_yeni * yeni_hedef) > toplam_kapasite:
+                if yeni_hedef > 1:
+                    yeni_hedef -= 1
+                elif orta_hedef > 1:
+                    orta_hedef -= 1
+                elif kidemli_hedef > 1:
+                    kidemli_hedef -= 1
+                else:
+                    break
         
         if vardiya_tipleri and len(vardiya_tipleri) > 0:
             kidem_gruplari = [

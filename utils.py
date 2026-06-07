@@ -216,6 +216,28 @@ def yetim_personel_temizligi_yap(session_state, personel_listesi: list):
         ]
 
 
+def kisinin_max_atama(
+    musait_gun_sayisi: int,
+    vardiya_modu: bool,
+    ardisik_yasak: bool = True
+) -> int:
+    """
+    Verilen müsait gün sayısı ve aktif moda göre bir kişinin
+    aylık max kaç atama alabileceğini döndürür (hard limit).
+
+    - Nöbet modu (vardiya_modu=False, ardisik_yasak=True): (musait + 1) // 2
+    - Diğer durumlar (vardiya modu veya ardisik yasak kapalı): musait_gun_sayisi
+
+    Not: Vardiya modundaki soft peş peşe çalışma günü limiti
+    (max_ardisik_calisma_gunu, w_max_ardisik) bu fonksiyona dahil
+    değildir; o limit solver içinde soft constraint olarak işlenir.
+    """
+
+    if not vardiya_modu and ardisik_yasak:
+        return (musait_gun_sayisi + 1) // 2
+    return musait_gun_sayisi
+
+
 def hesapla_otomatik_hedef(
     gun_sayisi: int,
     alanlar: list,
@@ -254,15 +276,13 @@ def hesapla_otomatik_hedef(
     # Kişi başı düşen nöbet (yuvarla)
     kisi_basi = max(1, round(toplam_slot / len(personeller)))
 
+    vardiya_modu = bool(vardiyalar)
     sonuc = {}
     for p in personeller:
         izin_gun = len(izin_map.get(p, []))
         musait_gun = max(0, gun_sayisi - izin_gun)
 
-        if ardisik_yasak:
-            max_mumkun = (musait_gun + 1) // 2
-        else:
-            max_mumkun = musait_gun
+        max_mumkun = kisinin_max_atama(musait_gun, vardiya_modu, ardisik_yasak)
 
         # İzinli kişi hiç müsait değilse 0 ver
         if max_mumkun <= 0:
