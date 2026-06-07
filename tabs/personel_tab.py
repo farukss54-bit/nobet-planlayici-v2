@@ -10,6 +10,7 @@ from utils import personel_referanslarini_temizle, hesapla_otomatik_hedef, ay_gu
 
 def render_personel_tab(session_to_ayarlar_func=None):
     st.subheader("👥 Kişiler ve Hedefler")
+    degisiklik_yapildi = False
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -17,16 +18,25 @@ def render_personel_tab(session_to_ayarlar_func=None):
     with col2:
         st.number_input("Ay", min_value=1, max_value=12, step=1, key="ay")
     with col3:
-        # Değeri 0-31 arasına sınırla
+        # Widget key'ini hesaplama key'inden ayır
+        # (Streamlit'te widget key'ine doğrudan atama yasak)
         current_hedef = st.session_state.get("varsayilan_hedef", 7)
         clamped_hedef = max(0, min(31, current_hedef))
-        if current_hedef != clamped_hedef:
-            st.session_state["varsayilan_hedef"] = clamped_hedef
-        st.number_input(
+        varsayilan_input = st.number_input(
             "Varsayılan hedef nöbet",
             min_value=0, max_value=31, step=1,
-            key="varsayilan_hedef"
+            value=clamped_hedef,
+            key="varsayilan_hedef_input"
         )
+        st.session_state["varsayilan_hedef"] = varsayilan_input
+
+        # Varsayılan hedef değişmişse mevcut tüm personelleri senkronize et
+        onceki = st.session_state.get("_varsayilan_hedef_onceki", varsayilan_input)
+        if onceki != varsayilan_input and st.session_state.get("personel_list"):
+            for p in st.session_state["personel_list"]:
+                st.session_state.setdefault("personel_targets", {})[p] = varsayilan_input
+            degisiklik_yapildi = True
+        st.session_state["_varsayilan_hedef_onceki"] = varsayilan_input
 
     # Otomatik hedef hesaplama kontrolü
     otomatik_aktif = st.toggle(
@@ -45,15 +55,14 @@ def render_personel_tab(session_to_ayarlar_func=None):
     # Personel sayısı
     personel_sayisi = st.number_input(
         "Kaç personel var?",
-        min_value=1, max_value=50,
-        value=st.session_state.get("personel_sayisi", 9),
+        min_value=0, max_value=50,
+        value=st.session_state.get("personel_sayisi", 0),
         step=1,
         key="personel_sayisi_input"
     )
 
     # Listeyi güncelle
     current_list = st.session_state["personel_list"]
-    degisiklik_yapildi = False
 
     if len(current_list) < personel_sayisi:
         for i in range(len(current_list), personel_sayisi):

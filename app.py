@@ -114,10 +114,7 @@ def init_session_state():
                 for p in ayarlar.personeller
             }
         else:
-            st.session_state["personel_list"] = [
-                "Dr. Ahmet", "Dr. Ayşe", "Dr. Mehmet", "Dr. Fatma",
-                "Dr. Ali", "Dr. Zeynep", "Dr. Can", "Dr. Elif", "Dr. Burak"
-            ]
+            st.session_state["personel_list"] = []
             st.session_state["personel_targets"] = {}
             st.session_state["weekday_block_map"] = {}
 
