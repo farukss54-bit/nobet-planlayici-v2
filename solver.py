@@ -143,7 +143,12 @@ class SolverInput:
     
     vardiyalar: List[VardiyaTanimi] = field(default_factory=list)
     personel_vardiya_kisitlari: Dict[str, List[str]] = field(default_factory=dict)
-    
+
+    # Önceki ayın son gün(ler)indeki atamalar
+    # Format: {kişi_ismi: {gun_offset: [vardiya_isimleri]}}
+    # gun_offset: -1 = önceki ayın son günü, -2 = son-1. gün, ...
+    onceki_ay_kuyrugu: Dict[str, Dict[int, List[str]]] = field(default_factory=dict)
+
     config: SolverConfig = None
     
     def __post_init__(self):
@@ -416,6 +421,13 @@ class NobetSolver:
         if not self.input.vardiya_modu:
             # Nöbet modu: blanket ardışık gün yasağı (eski davranış)
             for p in range(self.n_personel):
+                # Önceki ayın son günü ile bu ayın 1. günü arası
+                isim = self.input.personeller[p]
+                onceki = self.input.onceki_ay_kuyrugu.get(isim, {})
+                if -1 in onceki and onceki[-1]:
+                    bugun = sum(self.x[p, 1, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
+                    self.model.Add(bugun <= 0)
+
                 for g in range(1, self.gun_sayisi):
                     bugun = sum(self.x[p, g, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
                     yarin = sum(self.x[p, g+1, a, v] for a in range(self.n_alan) for v in range(self.n_vardiya))
@@ -455,6 +467,21 @@ class NobetSolver:
                     yetersiz_ciftler.append((v1_idx, v2_idx))
 
         for p in range(self.n_personel):
+            isim = self.input.personeller[p]
+            onceki = self.input.onceki_ay_kuyrugu.get(isim, {})
+
+            # Önceki ayın son günü ile bu ayın 1. günü arası
+            if -1 in onceki:
+                onceki_vardiyalar = set(onceki[-1])
+                for v1_isim in onceki_vardiyalar:
+                    v1_idx = next((i for i, v in enumerate(self.input.vardiyalar) if v.isim == v1_isim), None)
+                    if v1_idx is None:
+                        continue
+                    for v2_idx, _ in enumerate(self.input.vardiyalar):
+                        if (v1_idx, v2_idx) in yetersiz_ciftler:
+                            yarin = sum(self.x[p, 1, a, v2_idx] for a in range(self.n_alan))
+                            self.model.Add(yarin <= 0)
+
             for g in range(1, self.gun_sayisi):
                 for v1_idx, v2_idx in yetersiz_ciftler:
                     bugun = sum(self.x[p, g, a, v1_idx] for a in range(self.n_alan))

@@ -97,6 +97,56 @@ def aylik_plani_kaydet(plan: AylikPlan) -> bool:
         return False
 
 
+def onceki_ay_son_gun_atamalari(yil: int, ay: int, kac_gun: int = 2) -> Dict[str, Dict[int, List[str]]]:
+    """
+    Önceki ayın son N günündeki atamaları döndürür.
+
+    Format: {kişi_ismi: {gun_offset: [vardiya_isimleri]}}
+    gun_offset: -1 = önceki ayın son günü, -2 = önceki ayın son-1. günü, ...
+
+    Dosya yoksa veya sonuç yoksa boş dict döndürür.
+    """
+    from utils import ay_gun_sayisi
+
+    onceki_yil, onceki_ay = yil, ay - 1
+    if onceki_ay == 0:
+        onceki_yil -= 1
+        onceki_ay = 12
+
+    plan = aylik_plani_yukle(onceki_yil, onceki_ay)
+    if plan is None or plan.sonuc is None:
+        return {}
+
+    onceki_gun_sayisi = ay_gun_sayisi(onceki_yil, onceki_ay)
+    kuyruk: Dict[str, Dict[int, List[str]]] = {}
+
+    for gun_str, deger in plan.sonuc.items():
+        gun = int(gun_str)
+        if gun <= onceki_gun_sayisi - kac_gun:
+            continue
+
+        offset = gun - onceki_gun_sayisi - 1  # -1, -2, ...
+
+        if isinstance(deger, list):
+            # Basit mod: {gun: ["Dr. A", "Dr. B"]}
+            for kisi in deger:
+                kuyruk.setdefault(kisi, {}).setdefault(offset, []).append("Nöbet")
+        elif isinstance(deger, dict):
+            for alt_key, alt_deger in deger.items():
+                if isinstance(alt_deger, list):
+                    # Çoklu alan: {gun: {"Yeşil": ["Dr. A"]}}
+                    # veya vardiya modu (tek alan): {gun: {"Akşam": ["Dr. A"]}}
+                    for kisi in alt_deger:
+                        kuyruk.setdefault(kisi, {}).setdefault(offset, []).append(alt_key)
+                elif isinstance(alt_deger, dict):
+                    # Alan + vardiya: {gun: {"Yeşil": {"Sabah": ["Dr. A"]}}}
+                    for vardiya, kisiler in alt_deger.items():
+                        for kisi in kisiler:
+                            kuyruk.setdefault(kisi, {}).setdefault(offset, []).append(vardiya)
+
+    return kuyruk
+
+
 def aylik_plani_yukle(yil: int, ay: int) -> Optional[AylikPlan]:
     """
     Belirli bir ay için kaydedilmiş planı yükler.

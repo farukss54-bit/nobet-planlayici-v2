@@ -274,6 +274,60 @@ class TestVardiyaDinlenmeKurali:
             )
 
 
+class TestOncekiAyKuyrugu:
+    """Önceki ayın son günü ile bu ayın 1. günü arası ardışık/dinlenme kısıtları."""
+
+    def test_nobet_modu_onceki_gun_yasak(self):
+        """Önceki ayın son gününde nöbet tutan kişi, bu ayın 1. gününe atanmamalı."""
+        config = SolverConfig(
+            pin_search_workers=True,
+            max_sure_saniye=10.0,
+            enforce_minimum_staffing=False,
+        )
+        inp = SolverInput(
+            yil=2025, ay=6,
+            personeller=['A', 'B'],
+            hedefler={'A': 1, 'B': 1},
+            izinler={},
+            onceki_ay_kuyrugu={'A': {-1: ['Nöbet']}},
+            config=config,
+        )
+        solver = NobetSolver(inp)
+        sonuc = solver.coz()
+        a_gunler = kisinin_nobet_gunleri(sonuc, 'A')
+        assert 1 not in a_gunler, (
+            "A önceki ayın son gününde çalışmış, bu ayın 1. gününe atanmamalı"
+        )
+
+    def test_vardiya_modu_dinlenme_yasak(self):
+        """Önceki ay Akşam→bu ay Sabah (8 saat dinlenme) yasaklanmalı."""
+        config = SolverConfig(
+            pin_search_workers=True,
+            max_sure_saniye=10.0,
+            enforce_minimum_staffing=False,
+            minimum_dinlenme_saati=12,
+        )
+        inp = SolverInput(
+            yil=2025, ay=6,
+            personeller=['A', 'B'],
+            hedefler={'A': 1, 'B': 1},
+            izinler={},
+            vardiyalar=[
+                VardiyaTanimi('Akşam', '16:00', '24:00'),
+                VardiyaTanimi('Sabah', '08:00', '16:00'),
+            ],
+            onceki_ay_kuyrugu={'A': {-1: ['Akşam']}},
+            config=config,
+        )
+        solver = NobetSolver(inp)
+        sonuc = solver.coz()
+        gun_data = sonuc.get(1, {})
+        sabah_kisiler = gun_data.get('Sabah', [])
+        assert 'A' not in sabah_kisiler, (
+            "A Akşam→Sabah yasaklı geçiş: 8 saat dinlenme < 12 saat limit"
+        )
+
+
 class TestNightmareInfeasible:
     """
     Nightmare profili aşırı kısıtlıdır ve genellikle infeasible olur.

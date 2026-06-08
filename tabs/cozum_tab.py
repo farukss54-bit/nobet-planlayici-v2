@@ -15,7 +15,7 @@ from utils import (
     hafta_gunu_adi, tum_hafta_gunleri, hafta_gunu_numarasi,
     hesapla_otomatik_hedef
 )
-from storage import aylik_plani_kaydet
+from storage import aylik_plani_kaydet, onceki_ay_son_gun_atamalari
 from solver import (
     NobetSolver, SolverInput, SolverConfig,
     AlanTanimi, VardiyaTanimi, gelismis_teshis
@@ -223,6 +223,9 @@ def _cozum_olustur():
     )
 
     # Solver input
+    # Önceki ay kuyruğunu oku (ay sınırı ardışık/dinlenme kısıtları için)
+    onceki_kuyruk = onceki_ay_son_gun_atamalari(yil, ay, kac_gun=2)
+
     solver_input = SolverInput(
         yil=yil,
         ay=ay,
@@ -241,6 +244,7 @@ def _cozum_olustur():
         personel_kidem_gruplari=st.session_state.get("personel_kidem_gruplari", {}),
         vardiyalar=vardiyalar,
         personel_vardiya_kisitlari=personel_vardiya_kisitlari,
+        onceki_ay_kuyrugu=onceki_kuyruk,
         config=config
     )
 
