@@ -7,7 +7,7 @@ Ayarları ve aylık planları JSON dosyalarına kaydeder/yükler.
 import json
 import os
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 from models import Ayarlar, AylikPlan
