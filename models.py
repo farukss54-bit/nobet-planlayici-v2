@@ -288,7 +288,7 @@ class Ayarlar:
     iki_gun_bosluk_tercihi: int = 300
     
     # Otomatik hedef hesaplama
-    otomatik_hedef: bool = True
+    otomatik_hedef: bool = False
     
     def to_dict(self) -> dict:
         return {

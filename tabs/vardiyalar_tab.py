@@ -54,7 +54,12 @@ def render_vardiyalar_tab():
     with col3:
         yeni_bitis = st.time_input("Bitiş", value=None, key="yeni_vardiya_bit")
     with col4:
-        yeni_vardiya_min_staff = st.number_input("Min Pers.", min_value=1, max_value=10, value=1, key="yeni_vardiya_min_staff", help="Bu vardiyada en az kaç kişi")
+        yeni_vardiya_min_staff = st.number_input(
+            "Günlük Min. Kişi",
+            min_value=1, max_value=50, value=1,
+            key="yeni_vardiya_min_staff",
+            help="Bu vardiyada HER GÜN en az kaç kişi nöbet tutmalı? Örn: 1"
+        )
     with col5:
         yeni_vardiya_renk = st.color_picker("Renk", value="#2196F3", key="yeni_vardiya_renk")
 
@@ -102,8 +107,8 @@ def render_vardiyalar_tab():
             with col3:
                 current_min_staff = v.get("minimum_staffing", 1)
                 yeni_min_staff = st.number_input(
-                    "Min Pers.",
-                    min_value=1, max_value=10,
+                    "Günlük Min. Kişi",
+                    min_value=1, max_value=50,
                     value=current_min_staff,
                     key=f"vardiya_min_staff_{i}",
                     label_visibility="collapsed"

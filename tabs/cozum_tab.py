@@ -86,8 +86,8 @@ def _cozum_olustur():
         kisisel_hedef = st.session_state.get("personel_targets", {}).get(p)
         kidem = personel_kidem.get(p)
 
-        if kisisel_hedef is not None and kisisel_hedef != default_target:
-            # Kişisel hedef var (kullanıcı override etmiş)
+        if kisisel_hedef is not None:
+            # Kişisel hedef var (kullanıcı açıkça girmiş)
             hedefler[p] = kisisel_hedef
         elif otomatik_aktif and p in otomatik_hedefler:
             # Otomatik hesaplanan hedef
