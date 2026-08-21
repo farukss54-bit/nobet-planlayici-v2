@@ -61,23 +61,36 @@ def _render_header() -> None:
     )
 
 
-def _render_plan_placeholder() -> None:
-    """Yeni Plan akışı için yer tutucu (Adım 3-6'da doldurulacak)."""
-    st.markdown(
-        render_stepper(st.session_state.plan_step + 1, 4),
-        unsafe_allow_html=True,
-    )
-    st.info("Plan akışı buraya eklenecek (Adım 3-6).")
-
-    col1, col2 = st.columns(2)
+def _render_dummy_navigation() -> None:
+    """Placeholder sayfalar için basit navigasyon"""
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col1:
-        if st.button("← Dashboard'a Dön", type="secondary"):
-            st.session_state.page = "dashboard"
+        if st.button("← Geri", type="secondary"):
+            st.session_state.plan_step = max(0, st.session_state.plan_step - 1)
             st.rerun()
-    with col2:
-        if st.button("İleri →"):
-            st.session_state.plan_step = min(st.session_state.plan_step + 1, 3)
+    with col3:
+        if st.button("İleri →", type="primary"):
+            st.session_state.plan_step = min(3, st.session_state.plan_step + 1)
             st.rerun()
+
+
+def _render_plan_pages() -> None:
+    """Plan akışı sayfalarını yönlendirir"""
+    if st.session_state.plan_step == 0:
+        from pages import plan_ekip
+        plan_ekip.show_plan_ekip()
+    elif st.session_state.plan_step == 1:
+        st.markdown(render_stepper(2, 4), unsafe_allow_html=True)
+        st.info("İzinler sayfası henüz implemente edilmedi.")
+        _render_dummy_navigation()
+    elif st.session_state.plan_step == 2:
+        st.markdown(render_stepper(3, 4), unsafe_allow_html=True)
+        st.info("Kurallar sayfası henüz implemente edilmedi.")
+        _render_dummy_navigation()
+    elif st.session_state.plan_step == 3:
+        st.markdown(render_stepper(4, 4), unsafe_allow_html=True)
+        st.info("Çizelge sayfası henüz implemente edilmedi.")
+        _render_dummy_navigation()
 
 
 def _render_settings_placeholder() -> None:
@@ -106,7 +119,7 @@ def main() -> None:
     if st.session_state.page == "dashboard":
         dashboard.show_dashboard()
     elif st.session_state.page == "plan":
-        _render_plan_placeholder()
+        _render_plan_pages()
     elif st.session_state.page == "settings":
         _render_settings_placeholder()
     else:
