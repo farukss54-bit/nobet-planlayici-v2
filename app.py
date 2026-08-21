@@ -1,6 +1,7 @@
 import streamlit as st
 
 from design import inject_css, render_stepper
+from pages import dashboard
 
 """
 app.py — Nöbet Planlayıcı v2 ana giriş noktası.
@@ -60,23 +61,6 @@ def _render_header() -> None:
     )
 
 
-def _render_dashboard_placeholder() -> None:
-    """Dashboard ekranı için yer tutucu (Adım 2'de doldurulacak)."""
-    st.markdown("## Dashboard")
-    st.info("Dashboard ekranı buraya eklenecek (Adım 2).")
-
-    _, cta_col, _ = st.columns([2, 1, 2])
-    with cta_col:
-        if st.button(
-            "Yeni Plan Oluştur",
-            type="primary",
-            use_container_width=True,
-        ):
-            st.session_state.page = "plan"
-            st.session_state.plan_step = 0
-            st.rerun()
-
-
 def _render_plan_placeholder() -> None:
     """Yeni Plan akışı için yer tutucu (Adım 3-6'da doldurulacak)."""
     st.markdown(
@@ -120,7 +104,7 @@ def main() -> None:
     )
 
     if st.session_state.page == "dashboard":
-        _render_dashboard_placeholder()
+        dashboard.show_dashboard()
     elif st.session_state.page == "plan":
         _render_plan_placeholder()
     elif st.session_state.page == "settings":

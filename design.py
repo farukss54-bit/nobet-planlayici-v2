@@ -114,6 +114,32 @@ def inject_css() -> None:
                 background: #ffebee;
                 color: #c62828;
             }
+            .badge-success {
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+            .badge-warning {
+                background: #fff3e0;
+                color: #ed6c02;
+            }
+            .badge-muted {
+                background: #f5f5f5;
+                color: #6b6b7b;
+            }
+
+            /* Dashboard CTA kartı */
+            .card-cta {
+                background: #ffffff;
+                border: 2px dashed #e8e5e0;
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 16px;
+                text-align: center;
+            }
+            .card-cta:hover {
+                border-color: #0d7c8a;
+                background: #e6f4f5;
+            }
 
             /* Adım şeridi */
             .stepper {
