@@ -219,6 +219,40 @@ def inject_css() -> None:
                 margin: 0;
             }
 
+            /* Streamlit metin renkleri (kontrast düzeltmesi) */
+            .stMarkdown, .stMarkdown p {
+                color: #1a1a2e !important;
+            }
+            .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
+                color: #1a1a2e !important;
+            }
+            [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
+                color: #6b6b7b !important;
+            }
+
+            /* Radio butonları (navigasyon) - tüm iç elementler */
+            .stRadio,
+            .stRadio *,
+            .stRadio label,
+            .stRadio [role="radiogroup"] label,
+            .stRadio [data-baseweb="radio"] > div,
+            .stRadio [data-baseweb="radio"] label,
+            .stRadio div[role="radiogroup"] label p,
+            .stRadio p {
+                color: #1a1a2e !important;
+            }
+            .stRadio label {
+                font-weight: 500 !important;
+            }
+
+            /* Subheader'lar */
+            [data-testid="stHeadingWithActionElements"],
+            .stHeadingContainer h1,
+            .stHeadingContainer h2,
+            .stHeadingContainer h3 {
+                color: #1a1a2e !important;
+            }
+
             /* Streamlit widget override'ları */
             .stDataFrame th {
                 background: #faf9f7 !important;
