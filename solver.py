@@ -220,7 +220,9 @@ class NobetSolver:
         if self.input.config.ardisik_yasak:
             self._ardisik_gun_yasagi()
 
-        if self.input.config.gunasiri_limit_aktif and self.input.config.max_gunasiri_per_kisi > 0:
+        if (not self.input.vardiya_modu
+                and self.input.config.gunasiri_limit_aktif
+                and self.input.config.max_gunasiri_per_kisi > 0):
             self._gunasiri_limiti()
 
         self._ayri_tutma_kurallari()

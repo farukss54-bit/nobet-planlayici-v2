@@ -1,12 +1,12 @@
 {
   "name": "baseline_gunasiri_vardiya",
   "description": "Vardiya modu, 4 ardisik gun gerektiren girdi. Gunasiri limiti vardiyada yanlislıkla aktif.",
-  "beklenen_durum": "INFEASIBLE",
+  "beklenen_durum": "FEASIBLE",
   "input": {
     "yil": 2025,
     "ay": 1,
     "personeller": ["Ahmet", "Mehmet"],
-    "hedefler": {"Ahmet": 2, "Mehmet": 2},
+    "hedefler": {"Ahmet": 15, "Mehmet": 16},
     "vardiyalar": [
       {"isim": "Gunduz", "baslangic": "08:00", "bitis": "16:00", "minimum_staffing": 1},
       {"isim": "Aksam", "baslangic": "16:00", "bitis": "00:00", "minimum_staffing": 0}

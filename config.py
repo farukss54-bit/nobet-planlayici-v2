@@ -26,6 +26,8 @@ thread_sayisi = 8
 
 # Kişi başına aylık maksimum günaşırı nöbet sayısı
 # Günaşırı = 1 gün arayla nöbet (örn: Pazartesi ve Çarşamba)
+# YALNIZCA nöbet modunda uygulanır. Vardiya modunda dinlenme kuralları
+# (minimum_dinlenme_saati, max_ardisik_calisma_gunu) geçerlidir.
 max_gunasiri_per_kisi = 1
 
 # Vardiya modunda iki atama arası minimum dinlenme süresi (saat)
