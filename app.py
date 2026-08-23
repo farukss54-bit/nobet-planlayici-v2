@@ -83,9 +83,8 @@ def _render_plan_pages() -> None:
         from pages import plan_izinler
         plan_izinler.show_plan_izinler()
     elif st.session_state.plan_step == 2:
-        st.markdown(render_stepper(3, 4), unsafe_allow_html=True)
-        st.info("Kurallar sayfası henüz implemente edilmedi.")
-        _render_dummy_navigation()
+        from pages import plan_kurallar
+        plan_kurallar.show_plan_kurallar()
     elif st.session_state.plan_step == 3:
         st.markdown(render_stepper(4, 4), unsafe_allow_html=True)
         st.info("Çizelge sayfası henüz implemente edilmedi.")
