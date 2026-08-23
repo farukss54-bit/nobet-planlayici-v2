@@ -1,2 +1,4 @@
 __pycache__/
 *.py[cod]
+solver_shortcomings.md
+solver_review.md
