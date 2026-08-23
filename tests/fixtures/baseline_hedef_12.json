@@ -1,0 +1,17 @@
+{
+  "name": "baseline_hedef_12",
+  "description": "Nobet modu, izinsiz 31 gun, hedef=12. Dogrulama yanlis formul kullaniyor (16 diyor, gercek 11).",
+  "beklenen_durum": "INFEASIBLE",
+  "input": {
+    "yil": 2025,
+    "ay": 1,
+    "personeller": ["Ahmet"],
+    "hedefler": {"Ahmet": 12},
+    "config": {
+      "ardisik_yasak": true,
+      "gunasiri_limit_aktif": true,
+      "max_gunasiri_per_kisi": 1,
+      "min_kisi_per_gun": 1
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "baseline_hedef_esitlik",
+  "description": "Hedef esitlik cakismasi: tek kisi hedef=20 ama ardisik yasak ile max 16. Hard esitlik INFEASIBLE yapar.",
+  "beklenen_durum": "ValueError",
+  "input": {
+    "yil": 2025,
+    "ay": 1,
+    "personeller": ["Ahmet"],
+    "hedefler": {"Ahmet": 20},
+    "config": {
+      "ardisik_yasak": true,
+      "min_kisi_per_gun": 1,
+      "enforce_minimum_staffing": true
+    }
+  }
+}
