@@ -186,7 +186,8 @@ class NobetSolver:
         self.model = cp_model.CpModel()
         self.x = {}
         self.objective_terms = []
-    
+        self.cozum_meta = None  # Çözüm meta bilgisi (status, süre, objective)
+
     def coz(self) -> Dict:
         self._degiskenleri_olustur()
         self._hard_constraints_ekle()
@@ -724,7 +725,15 @@ class NobetSolver:
             solver.parameters.num_search_workers = self.input.config.thread_sayisi
         
         status = solver.Solve(self.model)
-        
+
+        # Çözüm meta bilgisi (her durumda doldurulur)
+        self.cozum_meta = {
+            "status": solver.StatusName(status),
+            "sure_saniye": solver.WallTime(),
+            "objective": solver.ObjectiveValue() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None,
+            "optimal": status == cp_model.OPTIMAL,
+        }
+
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             raise ValueError("Çözüm bulunamadı (kısıtlar fazla sıkı olabilir).")
         
