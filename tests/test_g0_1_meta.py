@@ -28,14 +28,14 @@ def test_cozulebilir_senaryo_meta_bilgisi():
 
 def test_cozumsuz_senaryo_meta_bilgisi():
     """Çözümsüz senaryo → ValueError yükselir VE meta bilgisi doldurulur"""
-    # Ayri_tut ile çözümsüz senaryo (tüm kişiler birbirinden ayrı tutulacak ama herkes çalışmalı)
+    # INFEASIBLE senaryo: birlikte_tut ile çelişen hedefler
+    # Ahmet ve Mehmet 10 gün birlikte olmalı, ama Mehmet'in hedefi 1 → INFEASIBLE
     input_data = SolverInput(
         yil=2025,
         ay=1,
         personeller=["Ahmet", "Mehmet"],
-        hedefler={"Ahmet": 15, "Mehmet": 16},
-        ayri_tut=[("Ahmet", "Mehmet")],
-        config=SolverConfig(min_kisi_per_gun=2)  # Her gün 2 kişi olmalı ama birlikte olamaz
+        hedefler={"Ahmet": 10, "Mehmet": 1},
+        birlikte_tut=[("Ahmet", "Mehmet", 10)]  # 10 gün birlikte ama Mehmet hedefi 1
     )
 
     solver = NobetSolver(input_data)

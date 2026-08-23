@@ -188,6 +188,42 @@ class NobetSolver:
         self.objective_terms = []
         self.cozum_meta = None  # Çözüm meta bilgisi (status, süre, objective)
 
+        # Pre-validation: hedef > max_mumkun kontrolü
+        self._validate_hedefler()
+
+    def _validate_hedefler(self):
+        """Hedeflerin maksimum mümkün atamaları aşmadığını kontrol eder (pre-solve validation)."""
+        for isim in self.input.personeller:
+            musait_gunler = [g for g in range(1, self.gun_sayisi + 1)
+                           if g not in self.input.izinler.get(isim, set())]
+            musait_gun_sayisi = len(musait_gunler)
+
+            max_mumkun = kisinin_max_atama(
+                musait_gun_sayisi,
+                self.input.vardiya_modu,
+                self.input.config.ardisik_yasak,
+                takvim_gun_sayisi=self.gun_sayisi,
+                gunasiri_limit_aktif=self.input.config.gunasiri_limit_aktif,
+                max_gunasiri=self.input.config.max_gunasiri_per_kisi
+            )
+
+            # Vardiya bazlı hedef kontrolü
+            vardiya_hedef = self.input.vardiya_hedefleri.get(isim, {})
+            if vardiya_hedef and self.input.vardiya_modu:
+                toplam_vardiya_hedef = sum(vardiya_hedef.values())
+                if toplam_vardiya_hedef > max_mumkun:
+                    raise ValueError(
+                        f"{isim}: Toplam vardiya hedefi ({toplam_vardiya_hedef}) > "
+                        f"maksimum mümkün ({max_mumkun})"
+                    )
+            else:
+                # Toplam hedef kontrolü
+                hedef = self.input.hedefler.get(isim, 0)
+                if hedef > max_mumkun:
+                    raise ValueError(
+                        f"{isim}: Hedef ({hedef}) > maksimum mümkün ({max_mumkun})"
+                    )
+
     def coz(self) -> Dict:
         self._degiskenleri_olustur()
         self._hard_constraints_ekle()
@@ -270,7 +306,10 @@ class NobetSolver:
             max_mumkun = kisinin_max_atama(
                 musait_gun_sayisi,
                 self.input.vardiya_modu,
-                self.input.config.ardisik_yasak
+                self.input.config.ardisik_yasak,
+                takvim_gun_sayisi=self.gun_sayisi,
+                gunasiri_limit_aktif=self.input.config.gunasiri_limit_aktif,
+                max_gunasiri=self.input.config.max_gunasiri_per_kisi
             )
 
             # Vardiya bazlı hedef var mı?
@@ -795,14 +834,14 @@ class TeshisSonucu:
 
 
 def gelismis_teshis(
-    yil: int, 
-    ay: int, 
-    personeller: List[str], 
+    yil: int,
+    ay: int,
+    personeller: List[str],
     hedefler: Dict[str, int],
     vardiya_hedefleri: Dict[str, Dict[str, int]],  # {kisi: {vardiya: hedef}}
-    izinler: Dict[str, Set[int]], 
+    izinler: Dict[str, Set[int]],
     tatiller: Set[int],
-    birlikte_tut: List[Tuple[str, str, int]], 
+    birlikte_tut: List[Tuple[str, str, int]],
     ayri_tut: List[Tuple[str, str]],
     alanlar: List[AlanTanimi] = None,
     vardiyalar: List[VardiyaTanimi] = None,
@@ -811,7 +850,9 @@ def gelismis_teshis(
     personel_kidem_gruplari: Dict[str, str] = None,
     kidem_kurallari: Dict[str, Dict[str, Dict[str, int]]] = None,  # {alan: {grup: {min/max}}}
     ardisik_yasak: bool = True,
-    enforce_minimum_staffing: bool = True
+    enforce_minimum_staffing: bool = True,
+    gunasiri_limit_aktif: bool = True,
+    max_gunasiri: int = 1,
 ) -> List[TeshisSonucu]:
     """
     Çözüm bulunamadığında detaylı teşhis yapar.
@@ -837,7 +878,14 @@ def gelismis_teshis(
         
         # Ardışık yasak varsa ve nöbet modundaysa max nöbet = (müsait+1)/2
         vardiya_modu = bool(vardiyalar)
-        max_mumkun = kisinin_max_atama(musait_gun_sayisi, vardiya_modu, ardisik_yasak)
+        max_mumkun = kisinin_max_atama(
+            musait_gun_sayisi,
+            vardiya_modu,
+            ardisik_yasak,
+            takvim_gun_sayisi=gun_sayisi,
+            gunasiri_limit_aktif=gunasiri_limit_aktif,
+            max_gunasiri=max_gunasiri
+        )
         
         toplam_hedef = hedefler.get(p, 0)
         

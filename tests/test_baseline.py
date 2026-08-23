@@ -66,32 +66,35 @@ def test_baseline_fixture(fixture_name):
     print(f"Beklenen: {fixture['beklenen_durum']}")
 
     input_data = fixture_to_solver_input(fixture)
-    solver = NobetSolver(input_data)
-
     beklenen = fixture["beklenen_durum"]
 
-    if beklenen == "INFEASIBLE":
-        with pytest.raises(ValueError, match="Çözüm bulunamadı"):
-            solver.coz()
-
-        # Meta bilgisi kontrol
-        assert solver.cozum_meta is not None
-        assert solver.cozum_meta["status"] == "INFEASIBLE"
-        print(f"[OK] INFEASIBLE dogrulandı (sure: {solver.cozum_meta['sure_saniye']:.2f}s)")
-
-    elif beklenen == "FEASIBLE":
-        sonuc = solver.coz()
-        assert solver.cozum_meta["status"] in ("OPTIMAL", "FEASIBLE")
-        print(f"[OK] FEASIBLE dogrulandı (sure: {solver.cozum_meta['sure_saniye']:.2f}s)")
-
-    elif beklenen == "ValueError":
+    if beklenen == "ValueError":
         # Çözüm öncesi ValueError (örn: hedef > max_mumkun)
+        # ValueError __init__ sırasında raise edilir
         with pytest.raises(ValueError):
-            solver.coz()
+            solver = NobetSolver(input_data)
         print(f"[OK] ValueError dogrulandı (pre-solve)")
 
     else:
-        pytest.fail(f"Geçersiz beklenen_durum: {beklenen}")
+        # Normal akış: solver oluştur
+        solver = NobetSolver(input_data)
+
+        if beklenen == "INFEASIBLE":
+            with pytest.raises(ValueError, match="Çözüm bulunamadı"):
+                solver.coz()
+
+            # Meta bilgisi kontrol
+            assert solver.cozum_meta is not None
+            assert solver.cozum_meta["status"] == "INFEASIBLE"
+            print(f"[OK] INFEASIBLE dogrulandı (sure: {solver.cozum_meta['sure_saniye']:.2f}s)")
+
+        elif beklenen == "FEASIBLE":
+            sonuc = solver.coz()
+            assert solver.cozum_meta["status"] in ("OPTIMAL", "FEASIBLE")
+            print(f"[OK] FEASIBLE dogrulandı (sure: {solver.cozum_meta['sure_saniye']:.2f}s)")
+
+        else:
+            pytest.fail(f"Geçersiz beklenen_durum: {beklenen}")
 
     print(f"{'='*60}")
 

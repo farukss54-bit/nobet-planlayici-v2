@@ -1,7 +1,7 @@
 {
   "name": "baseline_hedef_12",
   "description": "Nobet modu, izinsiz 31 gun, hedef=12. Dogrulama yanlis formul kullaniyor (16 diyor, gercek 11).",
-  "beklenen_durum": "INFEASIBLE",
+  "beklenen_durum": "ValueError",
   "input": {
     "yil": 2025,
     "ay": 1,

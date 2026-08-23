@@ -219,22 +219,70 @@ def yetim_personel_temizligi_yap(session_state, personel_listesi: list):
 def kisinin_max_atama(
     musait_gun_sayisi: int,
     vardiya_modu: bool,
-    ardisik_yasak: bool = True
+    ardisik_yasak: bool = True,
+    takvim_gun_sayisi: int = None,
+    gunasiri_limit_aktif: bool = False,
+    max_gunasiri: int = 1,
 ) -> int:
     """
     Verilen müsait gün sayısı ve aktif moda göre bir kişinin
     aylık max kaç atama alabileceğini döndürür (hard limit).
 
-    - Nöbet modu (vardiya_modu=False, ardisik_yasak=True): (musait + 1) // 2
-    - Diğer durumlar (vardiya modu veya ardisik yasak kapalı): musait_gun_sayisi
+    Formüller:
 
-    Not: Vardiya modundaki soft peş peşe çalışma günü limiti
-    (max_ardisik_calisma_gunu, w_max_ardisik) bu fonksiyona dahil
-    değildir; o limit solver içinde soft constraint olarak işlenir.
+    1. Nöbet modu + ardışık yasak + günaşırı limit aktif:
+       - Ardışık yasak sınırı: (musait + 1) // 2
+       - Günaşırı limit sınırı: (takvim - 1 + max_gunasiri) // 3 + 1
+       - Sonuç: min(ardışık_sınır, günaşırı_sınır)
+
+       Günaşırı formül türetmesi:
+       n atama için gerekli açıklık: 1 + 2k + 3(n-1-k) ≤ takvim_gun_sayisi
+       (k = kullanılan günaşırı çift sayısı ≤ max_gunasiri)
+       Çözüm: n ≤ (takvim - 1 + max_gunasiri) // 3 + 1
+
+       Örnek: 31 gün, max_gunasiri=1 → max 11 atama
+               31 gün, max_gunasiri=2 → max 12 atama
+
+    2. Nöbet modu + ardışık yasak (günaşırı limit yok):
+       (musait + 1) // 2
+
+    3. Diğer durumlar (vardiya modu veya ardisik yasak kapalı):
+       musait_gun_sayisi
+
+    Not:
+    - Vardiya modundaki soft peş peşe çalışma günü limiti
+      (max_ardisik_calisma_gunu, w_max_ardisik) bu fonksiyona dahil
+      değildir; o limit solver içinde soft constraint olarak işlenir.
+    - Bu bir ÜST SINIRDIR; izin günlerinin yerleşimi gerçek maksimumu
+      daha da düşürebilir.
+
+    Args:
+        musait_gun_sayisi: İzinsiz gün sayısı
+        vardiya_modu: Vardiya modu aktif mi
+        ardisik_yasak: Ardışık gün yasağı var mı
+        takvim_gun_sayisi: Ayın toplam gün sayısı (günaşırı hesabı için)
+        gunasiri_limit_aktif: Günaşırı limiti aktif mi
+        max_gunasiri: Maksimum günaşırı çift sayısı
+
+    Returns:
+        Maksimum atama sayısı
     """
 
+    # Nöbet modu + ardışık yasak + günaşırı limit
+    if (not vardiya_modu
+        and ardisik_yasak
+        and gunasiri_limit_aktif
+        and takvim_gun_sayisi is not None):
+
+        sinir_ardisik = (musait_gun_sayisi + 1) // 2
+        sinir_gunasiri = (takvim_gun_sayisi - 1 + max_gunasiri) // 3 + 1
+        return min(sinir_ardisik, sinir_gunasiri)
+
+    # Nöbet modu + ardışık yasak (günaşırı limit yok)
     if not vardiya_modu and ardisik_yasak:
         return (musait_gun_sayisi + 1) // 2
+
+    # Diğer durumlar
     return musait_gun_sayisi
 
 
@@ -244,7 +292,8 @@ def hesapla_otomatik_hedef(
     vardiyalar: list,
     personeller: list,
     izin_map: dict,
-    ardisik_yasak: bool = True
+    ardisik_yasak: bool = True,
+    gunasiri_limit_aktif: bool = True
 ) -> dict:
     """
     Toplam nöbet ihtiyacını müsait personel sayısına bölerek
@@ -257,6 +306,7 @@ def hesapla_otomatik_hedef(
         personeller: Personel isimleri listesi
         izin_map: {isim: [izinli_gunler]} formatında izinler
         ardisik_yasak: Ardışık gün yasağı var mı
+        gunasiri_limit_aktif: Günaşırı limiti aktif mi
 
     Returns:
         {isim: hedef_nobet} formatında dictionary
@@ -282,7 +332,14 @@ def hesapla_otomatik_hedef(
         izin_gun = len(izin_map.get(p, []))
         musait_gun = max(0, gun_sayisi - izin_gun)
 
-        max_mumkun = kisinin_max_atama(musait_gun, vardiya_modu, ardisik_yasak)
+        max_mumkun = kisinin_max_atama(
+            musait_gun,
+            vardiya_modu,
+            ardisik_yasak,
+            takvim_gun_sayisi=gun_sayisi,
+            gunasiri_limit_aktif=gunasiri_limit_aktif,
+            max_gunasiri=1  # Config'ten gelecek, şimdilik sabit
+        )
 
         # İzinli kişi hiç müsait değilse 0 ver
         if max_mumkun <= 0:
