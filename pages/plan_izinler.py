@@ -51,7 +51,8 @@ def _render_ay_seridi(
     ay: int,
     gun_sayisi: int,
     izinler: Set[int],
-    tercihler: Set[int]
+    tercihler: Set[int],
+    bloklu_gunler: List[str]
 ) -> None:
     """31 günlük ay şeridini 7 hafta × 7 gün grid olarak render eder
 
@@ -62,7 +63,27 @@ def _render_ay_seridi(
         gun_sayisi: Ayın gün sayısı
         izinler: İzinli günler seti
         tercihler: Tercih edilen günler seti
+        bloklu_gunler: Bloklu hafta günleri listesi (["Pazartesi", "Cuma", ...])
     """
+    # Bloklu hafta günlerini gün numaralarına dönüştür
+    bloklu_gun_numaralari = set()
+    hafta_gun_map = {
+        "Pazartesi": 0,
+        "Salı": 1,
+        "Çarşamba": 2,
+        "Perşembe": 3,
+        "Cuma": 4,
+        "Cumartesi": 5,
+        "Pazar": 6
+    }
+
+    for gun in range(1, gun_sayisi + 1):
+        gun_hafta_idx = hafta_gunu(yil, ay, gun)  # 0=Pzt, 6=Paz
+        for bloklu_gun_adi in bloklu_gunler:
+            if bloklu_gun_adi in hafta_gun_map:
+                if hafta_gun_map[bloklu_gun_adi] == gun_hafta_idx:
+                    bloklu_gun_numaralari.add(gun)
+
     max_hafta = (gun_sayisi + 6) // 7  # 5-6 hafta
 
     st.markdown("<div style='margin-top: 12px; margin-bottom: 8px;'>", unsafe_allow_html=True)
@@ -81,9 +102,12 @@ def _render_ay_seridi(
                         unsafe_allow_html=True
                     )
                 else:
-                    # Renk belirleme
+                    # Renk belirleme (öncelik: izin > bloklu > tercih > boş)
                     if gun in izinler:
                         bg_color = "#ff6b6b"  # Kırmızı
+                        text_color = "#ffffff"
+                    elif gun in bloklu_gun_numaralari:
+                        bg_color = "#ff9800"  # Turuncu (bloklu)
                         text_color = "#ffffff"
                     elif gun in tercihler:
                         bg_color = "#4dabf7"  # Açık mavi
@@ -252,8 +276,7 @@ def _render_personel_kart(personel: Dict, yil: int, ay: int, gun_sayisi: int) ->
             izinler = gun_parse(izin_input, gun_sayisi)
             st.session_state.plan_izinler[isim] = sorted(izinler)
 
-            if izinler:
-                st.caption(f"✓ {len(izinler)} gün")
+            st.caption(f"✓ {len(izinler)} gün" if izinler else "\u00A0")
 
         with col2:
             mevcut_tercihler = st.session_state.plan_tercihler.get(isim, [])
@@ -267,8 +290,7 @@ def _render_personel_kart(personel: Dict, yil: int, ay: int, gun_sayisi: int) ->
             tercihler = gun_parse(tercih_input, gun_sayisi)
             st.session_state.plan_tercihler[isim] = sorted(tercihler)
 
-            if tercihler:
-                st.caption(f"✓ {len(tercihler)} gün")
+            st.caption(f"✓ {len(tercihler)} gün" if tercihler else "\u00A0")
 
         with col3:
             bloklu = st.multiselect(
@@ -281,6 +303,8 @@ def _render_personel_kart(personel: Dict, yil: int, ay: int, gun_sayisi: int) ->
             )
             st.session_state.plan_bloklu_gunler[isim] = bloklu
 
+            st.caption(f"✓ {len(bloklu)} gün" if bloklu else "\u00A0")
+
         # AY ŞERİDİ
         _render_ay_seridi(
             isim,
@@ -288,7 +312,8 @@ def _render_personel_kart(personel: Dict, yil: int, ay: int, gun_sayisi: int) ->
             ay,
             gun_sayisi,
             set(izinler),
-            set(tercihler)
+            set(tercihler),
+            bloklu
         )
 
         # ALT METİN (istatistikler)

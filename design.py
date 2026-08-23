@@ -41,6 +41,12 @@ def inject_css() -> None:
     st.markdown(
         """
         <style>
+            /* ============================================================
+               STREAMLIT SÜRÜM UYARISI (1.52.2)
+               Bu CSS data-testid selectorları kullanır (Streamlit iç DOM).
+               Streamlit güncellemesinde kırılabilir. requirements.txt'te
+               sürüm sabitlenmiştir.
+               ============================================================ */
             .stApp {
                 background-color: #f5f3f0;
             }
@@ -262,11 +268,30 @@ def inject_css() -> None:
                 letter-spacing: 0.06em;
                 color: #9a9aa8 !important;
             }
+            /* Widget label - tüm widget tipleri için merkezi kural.
+               data-testid="stWidgetLabel" bir <label> elementidir.
+               Metin her zaman <p> içinde sarmalanmıyor, bu yüzden
+               hem konteyner hem tüm alt elementler hedefleniyor. */
+            [data-testid="stWidgetLabel"],
+            [data-testid="stWidgetLabel"] * {
+                color: #1a1a2e;
+                font-size: 0.875rem;
+                font-weight: 400;
+            }
+
+            /* Text input kontrol */
             .stTextInput input,
             .stNumberInput input {
-                border-radius: 6px !important;
-                border: 1px solid #e8e5e0 !important;
+                border-radius: 6px;
+                border: 1px solid #e8e5e0;
             }
+
+            /* Multiselect kontrol */
+            .stMultiSelect div[data-baseweb="select"] > div {
+                border-radius: 6px;
+            }
+
+            /* Butonlar */
             .stButton button[kind="primary"] {
                 background: #1a1a2e !important;
                 color: #ffffff !important;

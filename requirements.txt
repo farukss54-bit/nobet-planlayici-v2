@@ -1,4 +1,4 @@
-streamlit>=1.35.0  # multiselect column config için
+streamlit==1.52.2  # Sabit sürüm: data-testid selectorları Streamlit iç DOM'una bağlı, güncellemede kırılabilir
 pandas>=2.0.0
 openpyxl>=3.1.0
 ortools==9.15.6755  # Sabit: farklı sürümler farklı arama algoritmaları kullanabilir, determinizmi bozar
