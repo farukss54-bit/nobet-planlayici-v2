@@ -608,23 +608,35 @@ class NobetSolver:
                 self.model.Add(ta + tb <= 1)
     
     def _alan_kontenjan_soft(self):
+        """
+        Alan kontenjan hedefi/tavanı (gunluk_kontenjan / max_kontenjan).
+        Nöbet modunda ((gün, alan) başına) eski davranışla birebir aynıdır.
+        Vardiya modunda ((gün, alan, vardiya) başına) uygulanır: değerler
+        VARDİYA BAŞINA yorumlanır (kapsama semantiğiyle tutarlı — bkz.
+        _vardiya_minimum_kontenjan_hard/_soft, aynı filtreleme mantığı).
+        """
         w = self.input.config.w_alan_kontenjan_sapma
         for a_idx, alan in enumerate(self.input.alanlar):
             hedef = alan.gunluk_kontenjan
             max_k = alan.max_kontenjan
-            
+
             for g in range(1, self.gun_sayisi + 1):
-                toplam = sum(self.x[p, g, a_idx, v] 
-                            for p in range(self.n_personel) for v in range(self.n_vardiya))
-                
-                if max_k and max_k > 0:
-                    self.model.Add(toplam <= max_k)
-                
-                sapma_pos = self.model.NewIntVar(0, self.n_personel, f"sp_{a_idx}_{g}")
-                sapma_neg = self.model.NewIntVar(0, self.n_personel, f"sn_{a_idx}_{g}")
-                self.model.Add(toplam - hedef == sapma_pos - sapma_neg)
-                self.objective_terms.append(sapma_pos * w)
-                self.objective_terms.append(sapma_neg * w)
+                for v_idx in range(self.n_vardiya):
+                    # Alan için geçersiz vardiyaları atla (hard'daki filtreyle aynı)
+                    if self.input.vardiya_modu and alan.vardiya_tipleri:
+                        if self.input.vardiyalar[v_idx].isim not in alan.vardiya_tipleri:
+                            continue
+
+                    toplam = sum(self.x[p, g, a_idx, v_idx] for p in range(self.n_personel))
+
+                    if max_k and max_k > 0:
+                        self.model.Add(toplam <= max_k)
+
+                    sapma_pos = self.model.NewIntVar(0, self.n_personel, f"sp_{a_idx}_{g}_{v_idx}")
+                    sapma_neg = self.model.NewIntVar(0, self.n_personel, f"sn_{a_idx}_{g}_{v_idx}")
+                    self.model.Add(toplam - hedef == sapma_pos - sapma_neg)
+                    self.objective_terms.append(sapma_pos * w)
+                    self.objective_terms.append(sapma_neg * w)
     
     def _gunluk_alan_dengesi(self):
         w = self.input.config.w_gunluk_denge
