@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+
+# Claude Code yerel ayarlar
+.claude/
+
+# Kazara olusan windows redirect artefaktI
+nul
+
+# Ic ice git deposu (ayri proje, submodule degil)
+nobet-planlayici/
+
+# Ad-hoc teshis/manuel test scriptleri ve inceleme notlari
+solver_review.md
+solver_shortcomings.md
+analiz_25personel.py
+calistir_senaryo_01.py
+manuel_test_g12.py
+teshis_25personel.py
+teshis_25personel_dinlenme.py
+test_20personel.py
+test_25personel.py
