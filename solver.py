@@ -36,6 +36,8 @@ from config import (
     w_esnek_ayri,
     w_tercih,
     w_max_ardisik,
+    w_hedef_sapma,
+    hedef_tolerans,
 )
 
 
@@ -109,6 +111,9 @@ class SolverConfig:
     w_esnek_ayri: int = w_esnek_ayri
     w_tercih: int = w_tercih
     w_alan_denklik: int = w_alan_denklik
+
+    w_hedef_sapma: int = w_hedef_sapma
+    hedef_tolerans: int = hedef_tolerans
 
     saat_bazli_denge: bool = True
 
@@ -187,6 +192,7 @@ class NobetSolver:
         self.x = {}
         self.objective_terms = []
         self.cozum_meta = None  # Çözüm meta bilgisi (status, süre, objective)
+        self.uyarilar = []  # Kullanıcıya iletilecek uyarı mesajları (örn. hedef girilmemiş kişi)
 
         # Pre-validation: hedef > max_mumkun kontrolü
         self._validate_hedefler()
@@ -291,11 +297,36 @@ class NobetSolver:
 
         self.model.Minimize(sum(self.objective_terms))
     
+    def _hedef_sapma_ekle(self, toplam, hedef, etiket):
+        """
+        toplam'ın hedef'e eşit tutulmasını SOFT olarak teşvik eder (hard eşitlik
+        değil): sapma = |toplam - hedef|, w_hedef_sapma ile cezalandırılır.
+        hedef_tolerans > 0 ise sapmanın tolerans içindeki kısmı cezasızdır.
+        """
+        w = self.input.config.w_hedef_sapma
+        tol = self.input.config.hedef_tolerans
+
+        fark = self.model.NewIntVar(-self.gun_sayisi, self.gun_sayisi, f"hedef_fark_{etiket}")
+        self.model.Add(fark == toplam - hedef)
+        sapma = self.model.NewIntVar(0, self.gun_sayisi, f"hedef_sapma_{etiket}")
+        self.model.AddAbsEquality(sapma, fark)
+
+        if tol > 0:
+            asim = self.model.NewIntVar(0, self.gun_sayisi, f"hedef_asim_{etiket}")
+            self.model.Add(asim >= sapma - tol)
+            self.objective_terms.append(asim * w)
+        else:
+            self.objective_terms.append(sapma * w)
+
     def _hedef_nobet_sayilari(self):
         """
-        Her personel için hedef sayıda nöbet tutmalı.
+        Her personel için hedef sayıda nöbet tutması SOFT olarak teşvik edilir.
         - Vardiya hedefleri tanımlıysa: her vardiya için ayrı hedef
         - Değilse: toplam nöbet hedefi (eski mod)
+        hedef=0, "bu vardiyada/hiç ÇALIŞAMAZ" anlamına GELMEZ — yalnızca 0'a
+        yakın tutma baskısı oluşturur. Bir kişi bir vardiyada asla çalışamayacaksa
+        bunun tek mekanizması personel_vardiya_kisitlari (hard kısıt) olmalıdır.
+        Hedefi hiç girilmemiş kişi serbest bırakılır (kısıt kurulmaz), uyarı eklenir.
         """
         for p_idx, isim in enumerate(self.input.personeller):
             # Calculate max possible shifts for this person
@@ -323,21 +354,18 @@ class NobetSolver:
 
                 for v_idx, vardiya in enumerate(self.input.vardiyalar):
                     hedef = vardiya_hedef.get(vardiya.isim, 0)
-                    if hedef > 0:
-                        if hedef > max_mumkun:
-                            raise ValueError(f"{isim}: {vardiya.isim} hedefi ({hedef}) > maksimum mümkün ({max_mumkun})")
-                        # Bu kişinin bu vardiyadan tutması gereken nöbet sayısı
-                        toplam = sum(self.x[p_idx, g, a, v_idx]
-                                    for g in range(1, self.gun_sayisi + 1)
-                                    for a in range(self.n_alan))
-                        self.model.Add(toplam == hedef)
-                    elif hedef == 0:
-                        # Bu vardiyada çalışmamalı (hedef 0 ise)
-                        for g in range(1, self.gun_sayisi + 1):
-                            for a in range(self.n_alan):
-                                self.model.Add(self.x[p_idx, g, a, v_idx] == 0)
+                    if hedef > max_mumkun:
+                        raise ValueError(f"{isim}: {vardiya.isim} hedefi ({hedef}) > maksimum mümkün ({max_mumkun})")
+                    # Bu kişinin bu vardiyadan tutması istenen nöbet sayısı (soft)
+                    toplam = sum(self.x[p_idx, g, a, v_idx]
+                                for g in range(1, self.gun_sayisi + 1)
+                                for a in range(self.n_alan))
+                    self._hedef_sapma_ekle(toplam, hedef, f"{p_idx}_{v_idx}")
             else:
                 # ESKİ MOD - toplam nöbet hedefi
+                if isim not in self.input.hedefler:
+                    self.uyarilar.append(f"{isim}: hedef girilmemiş, serbest bırakıldı")
+                    continue
                 hedef = self.input.hedefler.get(isim, 0)
                 if hedef > max_mumkun:
                     raise ValueError(f"{isim}: Hedef ({hedef}) > maksimum mümkün ({max_mumkun})")
@@ -345,7 +373,7 @@ class NobetSolver:
                             for g in range(1, self.gun_sayisi + 1)
                             for a in range(self.n_alan)
                             for v in range(self.n_vardiya))
-                self.model.Add(toplam == hedef)
+                self._hedef_sapma_ekle(toplam, hedef, f"{p_idx}_toplam")
     
     def _izin_gunleri(self):
         for p_idx, isim in enumerate(self.input.personeller):

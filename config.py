@@ -85,5 +85,13 @@ w_tercih = 2
 # Vardiya modunda peş peşe çalışma günü limiti aşım cezası
 w_max_ardisik = 2000
 
+# --- Hedef Nöbet Sayısı Sapması (Soft) ---
+# Hedef sapması cezası. w_alan_kontenjan_sapma (10000) üstü,
+# w_vardiya_min_kontenjan (50000) altı olmalı: hedefler denge
+# terimlerini domine etmeli ama staffing'i asla ezmemeli.
+w_hedef_sapma = 20000
+# Cezasız hedef sapması aralığı (±). 0 = tam hedefe en yakın plan.
+hedef_tolerans = 0
+
 # CP-SAT deterministik çözüm için sabit rastgelelik tohumu
 random_seed = 42

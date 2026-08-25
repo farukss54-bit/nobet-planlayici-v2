@@ -2,7 +2,7 @@
 G0.1 - Solver status ve meta bilgisi testleri
 """
 import pytest
-from solver import NobetSolver, SolverInput, SolverConfig
+from solver import NobetSolver, SolverInput, SolverConfig, VardiyaTanimi
 
 
 def test_cozulebilir_senaryo_meta_bilgisi():
@@ -28,14 +28,21 @@ def test_cozulebilir_senaryo_meta_bilgisi():
 
 def test_cozumsuz_senaryo_meta_bilgisi():
     """Çözümsüz senaryo → ValueError yükselir VE meta bilgisi doldurulur"""
-    # INFEASIBLE senaryo: birlikte_tut ile çelişen hedefler
-    # Ahmet ve Mehmet 10 gün birlikte olmalı, ama Mehmet'in hedefi 1 → INFEASIBLE
+    # INFEASIBLE senaryo: G1.3'ten sonra hedef eşitliği SOFT olduğu için
+    # (birlikte_tut ile çelişen hedefler gibi) yumuşatılabilir çakışmalar
+    # artık burada işe yaramaz — hiçbir fazın soft'a çeviremeyeceği YAPISAL
+    # bir çakışma gerekir: minimum_staffing (4), o vardiyaya girebilecek
+    # TOPLAM personel sayısını (3) aşıyor. Her kişi bir vardiyaya günde en
+    # fazla bir kez girebileceğinden (kişi × gün × vardiya tekillik kısıtı)
+    # bu hiçbir zaman feasible olamaz; yetkinlik/kısıt filtresine bile bağlı
+    # değil, saf sayma argümanı.
     input_data = SolverInput(
         yil=2025,
         ay=1,
-        personeller=["Ahmet", "Mehmet"],
-        hedefler={"Ahmet": 10, "Mehmet": 1},
-        birlikte_tut=[("Ahmet", "Mehmet", 10)]  # 10 gün birlikte ama Mehmet hedefi 1
+        personeller=["Ahmet", "Mehmet", "Ali"],
+        hedefler={"Ahmet": 5, "Mehmet": 5, "Ali": 5},
+        vardiyalar=[VardiyaTanimi("Tek", "08:00", "16:00", minimum_staffing=4)],
+        config=SolverConfig(enforce_minimum_staffing=True),
     )
 
     solver = NobetSolver(input_data)
