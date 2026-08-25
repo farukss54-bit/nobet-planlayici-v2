@@ -347,4 +347,18 @@ def hesapla_otomatik_hedef(
         else:
             sonuc[p] = min(kisi_basi, max_mumkun)
 
+    # Taşma kırpması: round() yukarı yuvarlayabildiği için toplam hedef
+    # toplam_slot'u aşabilir. Aşan miktarı en yüksek hedefli kişilerden
+    # birer birer düş (deterministik sıra: hedef desc, isim asc).
+    fazla = sum(sonuc.values()) - toplam_slot
+    while fazla > 0:
+        adaylar = sorted(
+            (p for p in personeller if sonuc[p] > 0),
+            key=lambda p: (-sonuc[p], p)
+        )
+        if not adaylar:
+            break
+        sonuc[adaylar[0]] -= 1
+        fazla -= 1
+
     return sonuc
