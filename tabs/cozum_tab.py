@@ -26,6 +26,51 @@ from config import (
 )
 
 
+def _staffing_taban_tavan(alanlar, vardiyalar, gun_sayisi, enforce_minimum_staffing):
+    """
+    Günlük zorunlu doluluk tabanı ve (varsa) teorik doluluk tavanını hesaplar.
+
+    Solver'daki HARD kısıt döngüleriyle (_vardiya_minimum_kontenjan_hard,
+    _alan_kontenjan_soft'un max_kontenjan hard-cap'i) BİREBİR AYNI kombinasyon
+    filtresini kullanır: alan.vardiya_tipleri tanımlıysa ve bu vardiya o
+    listede yoksa kombinasyon sayılmaz.
+
+    Döner: (hard_taban, teorik_tavan). teorik_tavan tanımsızsa (kapasite üst
+    sınırı olmayan bir mod veya en az bir alanda max_kontenjan boşsa) None.
+    """
+    coklu_alan_modu = bool(alanlar)
+    vardiya_modu = bool(vardiyalar)
+
+    hard_taban_gunluk = 0
+    if vardiya_modu and enforce_minimum_staffing:
+        if coklu_alan_modu:
+            for alan in alanlar:
+                for vardiya in vardiyalar:
+                    if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                        continue
+                    hard_taban_gunluk += max(alan.minimum_staffing, vardiya.minimum_staffing)
+        else:
+            for vardiya in vardiyalar:
+                hard_taban_gunluk += vardiya.minimum_staffing
+
+    teorik_tavan_gunluk = 0
+    tavan_tanimli = coklu_alan_modu
+    if coklu_alan_modu:
+        vardiya_dongu = vardiyalar if vardiya_modu else [None]
+        for alan in alanlar:
+            for vardiya in vardiya_dongu:
+                if vardiya is not None and vardiya_modu and alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                    continue
+                if not alan.max_kontenjan or alan.max_kontenjan <= 0:
+                    tavan_tanimli = False
+                    continue
+                teorik_tavan_gunluk += alan.max_kontenjan
+
+    hard_taban = hard_taban_gunluk * gun_sayisi
+    teorik_tavan = teorik_tavan_gunluk * gun_sayisi if tavan_tanimli else None
+    return hard_taban, teorik_tavan
+
+
 def render_cozum_tab():
     st.subheader("✅ Çözüm")
 
@@ -145,14 +190,20 @@ def _cozum_olustur():
         for item in st.session_state.get("soft_no_pairs_list", [])
     ]
 
-    # Toplam hedef hesapla (feasibility kontrolü için)
-    toplam_hedef = sum(hedefler.values())
+    # Vardiya tipleri (taban/tavan hesabı vardiyalara ihtiyaç duyduğu için önce kurulur)
+    vardiyalar = [
+        VardiyaTanimi(
+            isim=v["isim"],
+            baslangic=v.get("baslangic", "08:00"),
+            bitis=v.get("bitis", "16:00"),
+            minimum_staffing=v.get("minimum_staffing", 1)
+        )
+        for v in vardiyalar_data
+    ]
 
     # Çoklu alan modu kontrolü
     alan_modu_aktif = st.session_state.get("alan_modu_aktif", False)
     alanlar_data = st.session_state.get("alanlar", [])
-    vardiyalar_data = st.session_state.get("vardiya_tipleri", [])
-    vardiya_sayisi = len(vardiyalar_data) if vardiyalar_data else 1
 
     if alan_modu_aktif and alanlar_data:
         alanlar = [
@@ -166,30 +217,30 @@ def _cozum_olustur():
             )
             for a in alanlar_data
         ]
-        toplam_kontenjan = sum(a.gunluk_kontenjan for a in alanlar)
-        gereken_toplam = toplam_kontenjan * gun_sayisi * vardiya_sayisi
-
-        if toplam_hedef < gereken_toplam:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {toplam_kontenjan}/gün x {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
-            st.stop()
     else:
         alanlar = []
-        gereken_toplam = gun_sayisi * vardiya_sayisi
-        if toplam_hedef < gereken_toplam:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
-            st.stop()
 
-    # Vardiya tipleri
-    vardiyalar_data = st.session_state.get("vardiya_tipleri", [])
-    vardiyalar = [
-        VardiyaTanimi(
-            isim=v["isim"],
-            baslangic=v.get("baslangic", "08:00"),
-            bitis=v.get("bitis", "16:00"),
-            minimum_staffing=v.get("minimum_staffing", 1)
+    # Toplam hedef - zorunlu taban / teorik tavan bilgilendirmesi.
+    # G1.3'ten beri hedefler soft: bu aralığın dışında olmak artık İMKÂNSIZ
+    # DEĞİL, yalnızca sapma riskini işaret eder. st.stop() YOK — yapısal
+    # eksiklik (örn. boş personel listesi) dışında çözüm engellenmez.
+    toplam_hedef = sum(hedefler.values())
+    enforce_minimum_staffing = st.session_state.get("enforce_minimum_staffing", True)
+    hard_taban, teorik_tavan = _staffing_taban_tavan(
+        alanlar, vardiyalar, gun_sayisi, enforce_minimum_staffing
+    )
+
+    if hard_taban > 0 and toplam_hedef < hard_taban:
+        st.warning(
+            f"Toplam hedef ({toplam_hedef}), zorunlu doluluk tabanının "
+            f"({hard_taban}) altında. Plan yine üretilir; kişilere "
+            f"hedeflerinden fazla nöbet düşecek ve sapmalar raporlanacak."
         )
-        for v in vardiyalar_data
-    ]
+    if teorik_tavan is not None and toplam_hedef > teorik_tavan:
+        st.warning(
+            f"Toplam hedef ({toplam_hedef}), teorik doluluk tavanının "
+            f"({teorik_tavan}) üstünde. Kişiler hedeflerinin altında kalacak."
+        )
 
     # Personel alan yetkinlikleri
     personel_alan_yetkinlikleri = st.session_state.get("personel_alan_yetkinlikleri", {})
