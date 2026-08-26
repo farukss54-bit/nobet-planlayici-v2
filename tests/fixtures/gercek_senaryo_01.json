@@ -1,0 +1,115 @@
+{
+  "name": "gercek_senaryo_01",
+  "description": "Gercekte patlayan vakanin kurgusallastirilmis hali. 25 personel, 4 kidem grubu, 3 alan + yapay MesaiDestek alani, 3 vardiya tipi. Detay ve modelleme borclari: gercek_senaryo_01_EKSIKLER.md.",
+  "beklenen_durum": "FEASIBLE",
+  "_olcum_notu": "Bu senaryonun config'i pin_search_workers=False birakildi (8 thread, uretimdeki gibi paralel arama) cunku pin_search_workers=True (tek thread) 60s butcesinde HICBIR cozum bulamiyor (ValueError) - bu senaryo olcekte tek threade cok buyuk. 8 threadli aramada CP-SAT paralel portfoy nedeniyle DETERMINISTIK DEGIL: ayni girdiyle art arda 4 kosuda toplam_hedef_sapmasi olcumu 0, 12, 13, 16 arasinda degisti (status hep FEASIBLE, sure hep ~60-61s sabit). Bu yuzden toplam_sapma_tavani SIKI bir denge olcutu degil, KABA bir regresyon tripwire'i: gozlenen en kotu deger (16) + genis marj.",
+  "toplam_sapma_tavani": 25,
+  "input": {
+    "yil": 2026,
+    "ay": 3,
+
+    "personeller": [
+      "Aslı", "Burak", "Cem", "Derya", "Emre",
+      "Fatma", "Gökhan", "Hale", "İlker", "Jale", "Kaan", "Leyla",
+      "Mert", "Nazlı", "Okan", "Pelin", "Rıza", "Selin",
+      "Tolga", "Umut", "Volkan", "Yasemin", "Zeynep", "Ahmet", "Banu"
+    ],
+
+    "personel_kidem_gruplari": {
+      "Aslı": "K1", "Burak": "K1", "Cem": "K1", "Derya": "K1", "Emre": "K1",
+      "Fatma": "K2", "Gökhan": "K2", "Hale": "K2", "İlker": "K2", "Jale": "K2", "Kaan": "K2", "Leyla": "K2",
+      "Mert": "K3", "Nazlı": "K3", "Okan": "K3", "Pelin": "K3", "Rıza": "K3", "Selin": "K3",
+      "Tolga": "K4", "Umut": "K4", "Volkan": "K4", "Yasemin": "K4", "Zeynep": "K4", "Ahmet": "K4", "Banu": "K4"
+    },
+
+    "vardiyalar": [
+      {"isim": "24s", "baslangic": "08:00", "bitis": "08:00", "minimum_staffing": 0},
+      {"isim": "16s", "baslangic": "08:00", "bitis": "00:00", "minimum_staffing": 0},
+      {"isim": "8s",  "baslangic": "16:00", "bitis": "00:00", "minimum_staffing": 0}
+    ],
+
+    "alanlar": [
+      {"isim": "Sarı",    "gunluk_kontenjan": 2, "max_kontenjan": 3, "minimum_staffing": 2,
+       "kidem_kurallari": {}, "vardiya_tipleri": ["24s"]},
+      {"isim": "Kırmızı", "gunluk_kontenjan": 2, "max_kontenjan": 3, "minimum_staffing": 2,
+       "kidem_kurallari": {"K1": {"min": 1}}, "vardiya_tipleri": ["24s"]},
+      {"isim": "Yeşil",   "gunluk_kontenjan": 1, "max_kontenjan": 2, "minimum_staffing": 1,
+       "kidem_kurallari": {}, "vardiya_tipleri": ["24s"]},
+      {"isim": "MesaiDestek", "gunluk_kontenjan": 0, "max_kontenjan": null, "minimum_staffing": 0,
+       "kidem_kurallari": {}, "vardiya_tipleri": ["16s", "8s"]}
+    ],
+
+    "personel_alan_yetkinlikleri": {
+      "Aslı": ["Kırmızı", "Sarı"], "Burak": ["Kırmızı", "Sarı"], "Cem": ["Kırmızı", "Sarı"],
+      "Derya": ["Kırmızı", "Sarı"], "Emre": ["Kırmızı", "Sarı"],
+      "Fatma": ["Kırmızı", "Sarı"], "Gökhan": ["Kırmızı", "Sarı"], "Hale": ["Kırmızı", "Sarı"],
+      "İlker": ["Kırmızı", "Sarı"], "Jale": ["Kırmızı", "Sarı"], "Kaan": ["Kırmızı", "Sarı"],
+      "Leyla": ["Kırmızı", "Sarı"],
+      "Mert": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Nazlı": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Okan": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Pelin": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Rıza": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Selin": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Tolga": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Umut": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Volkan": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Yasemin": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Zeynep": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"], "Ahmet": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"],
+      "Banu": ["Kırmızı", "Sarı", "Yeşil", "MesaiDestek"]
+    },
+
+    "personel_vardiya_kisitlari": {
+      "Aslı": ["24s"], "Burak": ["24s"], "Cem": ["24s"], "Derya": ["24s"], "Emre": ["24s"],
+      "Fatma": ["24s"], "Gökhan": ["24s"], "Hale": ["24s"], "İlker": ["24s"], "Jale": ["24s"],
+      "Kaan": ["24s"], "Leyla": ["24s"],
+      "Mert": ["24s", "16s"], "Nazlı": ["24s", "16s"], "Okan": ["24s", "16s"],
+      "Pelin": ["24s", "16s"], "Rıza": ["24s", "16s"], "Selin": ["24s", "16s"],
+      "Tolga": ["24s", "8s"], "Umut": ["24s", "8s"], "Volkan": ["24s", "8s"],
+      "Yasemin": ["24s", "8s"], "Zeynep": ["24s", "8s"], "Ahmet": ["24s", "8s"], "Banu": ["24s", "8s"]
+    },
+
+    "vardiya_hedefleri": {
+      "Aslı": {"24s": 8}, "Burak": {"24s": 8}, "Cem": {"24s": 8}, "Derya": {"24s": 8}, "Emre": {"24s": 8},
+      "Fatma": {"24s": 9}, "Gökhan": {"24s": 9}, "Hale": {"24s": 9}, "İlker": {"24s": 9},
+      "Jale": {"24s": 9}, "Kaan": {"24s": 9}, "Leyla": {"24s": 9},
+      "Mert": {"24s": 9, "16s": 1}, "Nazlı": {"24s": 9, "16s": 1}, "Okan": {"24s": 9, "16s": 1},
+      "Pelin": {"24s": 9, "16s": 1}, "Rıza": {"24s": 9, "16s": 1}, "Selin": {"24s": 9, "16s": 1},
+      "Tolga": {"24s": 10, "8s": 1}, "Umut": {"24s": 10, "8s": 1}, "Volkan": {"24s": 10, "8s": 1},
+      "Yasemin": {"24s": 10, "8s": 1}, "Zeynep": {"24s": 10, "8s": 1}, "Ahmet": {"24s": 10, "8s": 1},
+      "Banu": {"24s": 10, "8s": 1}
+    },
+
+    "hedefler": {
+      "Aslı": 8, "Burak": 8, "Cem": 8, "Derya": 8, "Emre": 8,
+      "Fatma": 9, "Gökhan": 9, "Hale": 9, "İlker": 9, "Jale": 9, "Kaan": 9, "Leyla": 9,
+      "Mert": 10, "Nazlı": 10, "Okan": 10, "Pelin": 10, "Rıza": 10, "Selin": 10,
+      "Tolga": 11, "Umut": 11, "Volkan": 11, "Yasemin": 11, "Zeynep": 11, "Ahmet": 11, "Banu": 11
+    },
+
+    "izinler": {
+      "Cem": [10, 11, 12],
+      "Fatma": [1, 2, 3, 4, 5],
+      "Kaan": [20, 21, 22, 23, 24],
+      "Mert": [6, 7, 8, 9],
+      "Pelin": [25, 26, 27, 28]
+    },
+
+    "tatiller": [20, 21, 22],
+
+    "birlikte_tut": [
+      ["Aslı", "Burak", 0],
+      ["Gökhan", "Tolga", 0]
+    ],
+    "ayri_tut": [
+      ["Hale", "Nazlı"]
+    ],
+    "esnek_ayri_tut": [],
+    "tercih_edilen": {},
+
+    "config": {
+      "ardisik_yasak": true,
+      "gunasiri_limit_aktif": true,
+      "max_gunasiri_per_kisi": 2,
+      "minimum_dinlenme_saati": 17,
+      "max_ardisik_calisma_gunu": 5,
+      "enforce_minimum_staffing": true,
+      "hedef_tolerans": 0
+    }
+  }
+}

@@ -63,9 +63,15 @@ Her madde ilgili faz/görevle etiketli.
 - **Faz 0-1 sonrası:** FEASIBLE + minimal hedef sapması bekleniyor.
   G1.1 (günaşırı vardiyadan çıkar) + G1.3 (soft hedef) + G1.4 (kontenjan
   granülaritesi) üçlüsü bu senaryonun ana düğümlerini çözüyor.
-- Fikstür, agent'ın G0.2 baseline setine `beklenen_durum: INFEASIBLE`
-  olarak eklenmeli; Faz 0-1 görevleri ilerledikçe beklenen durum o
-  görevlerin commit'lerinde güncellenmeli.
+- **EKLENDİ:** Fikstür `tests/fixtures/gercek_senaryo_01.json` olarak
+  resmi baseline setine eklendi, `beklenen_durum: FEASIBLE` (Faz 0-1
+  sonrası doğrulandı). Test: `tests/test_baseline_gercek_senaryo_01.py`
+  (`@pytest.mark.yavas`, ~60s). Not: senaryonun config'i 8 thread
+  (pin_search_workers=False) kullandığından CP-SAT paralel araması
+  deterministik değil — toplam hedef sapması ölçümü art arda koşularda
+  0-16 arasında değişti (status hep FEASIBLE). Bu yüzden test sıkı bir
+  denge ölçütü değil, gözlenen en kötü değer + geniş marjla kurulmuş
+  kaba bir regresyon tripwire'ı (`toplam_sapma_tavani: 25`) kullanıyor.
 
 ## Çalıştırma
 
