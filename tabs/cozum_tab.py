@@ -71,6 +71,60 @@ def _staffing_taban_tavan(alanlar, vardiyalar, gun_sayisi, enforce_minimum_staff
     return hard_taban, teorik_tavan
 
 
+def _toplam_sayim_cikar(schedule, has_alanlar, has_vardiyalar, personeller):
+    """Modden bağımsız olarak kişi başı gerçekleşen toplam atama sayısını çıkarır."""
+    sayim = {p: 0 for p in personeller}
+    for gun_data in schedule.values():
+        if has_alanlar and has_vardiyalar:
+            for alan_data in gun_data.values():
+                if isinstance(alan_data, dict):
+                    for kisiler in alan_data.values():
+                        for k in kisiler:
+                            if k in sayim:
+                                sayim[k] += 1
+        elif has_vardiyalar or has_alanlar:
+            for kisiler in gun_data.values():
+                for k in kisiler:
+                    if k in sayim:
+                        sayim[k] += 1
+        else:
+            isimler = gun_data if isinstance(gun_data, list) else []
+            for k in isimler:
+                if k in sayim:
+                    sayim[k] += 1
+    return sayim
+
+
+def _cozum_karnesi_goster(solver, toplam_sapma):
+    """
+    G0.1'in cozum_meta'sini ve G1.3'un solver.uyarilar'ini kullanicidan
+    gizlemez: durum (OPTIMAL/FEASIBLE), sure ve toplam hedef sapmasi
+    her zaman gorunur.
+    """
+    meta = getattr(solver, "cozum_meta", None) or {}
+    status = meta.get("status", "?")
+    sure = meta.get("sure_saniye")
+
+    if status == "OPTIMAL":
+        durum_metni = "En iyi çözüm (OPTIMAL)"
+    elif status == "FEASIBLE":
+        durum_metni = "Geçerli çözüm — süre limitine takıldı (FEASIBLE)"
+    else:
+        durum_metni = status
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Durum", durum_metni)
+    col2.metric("Süre", f"{sure:.1f} sn" if sure is not None else "?")
+    col3.metric("Toplam Hedef Sapması", toplam_sapma)
+
+    if status == "FEASIBLE":
+        st.info("Süre limiti içinde en iyi bulunan plan bu; sapmalar süre artırılarak azalabilir.")
+
+    uyarilar = getattr(solver, "uyarilar", None)
+    if uyarilar:
+        st.warning("**Uyarılar:**\n" + "\n".join(f"- {u}" for u in uyarilar))
+
+
 def render_cozum_tab():
     st.subheader("✅ Çözüm")
 
@@ -392,6 +446,13 @@ def _cozum_olustur():
     has_alanlar = bool(alanlar)
     has_vardiyalar = bool(vardiyalar)
 
+    # Karne icin: modden bagimsiz toplam sapma (Sigma |gerceklesen - hedef|)
+    toplam_sayim = _toplam_sayim_cikar(schedule, has_alanlar, has_vardiyalar, personeller)
+    toplam_sapma = sum(
+        abs(toplam_sayim.get(p, 0) - hedefler.get(p, default_target))
+        for p in personeller
+    )
+
     if has_alanlar and has_vardiyalar:
         # ALAN + VARDİYA MODU - {gun: {alan: {vardiya: [kişiler]}}}
         alan_isimleri = [a.isim for a in alanlar]
@@ -423,6 +484,7 @@ def _cozum_olustur():
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan + Vardiya)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -446,9 +508,11 @@ def _cozum_olustur():
                                     if v.isim == vardiya_isim:
                                         toplam_saat += v.saat
                                         break
+            hedef = hedefler.get(p, default_target)
             stat["Toplam Nöbet"] = toplam
             stat["Toplam Saat"] = toplam_saat
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             stats.append(stat)
 
         st.table(pd.DataFrame(stats))
@@ -480,6 +544,7 @@ def _cozum_olustur():
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Vardiya Modu)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -497,9 +562,11 @@ def _cozum_olustur():
                 stat[vardiya.isim] = count
                 toplam += count
                 toplam_saat += count * vardiya.saat
+            hedef = hedefler.get(p, default_target)
             stat["TOPLAM"] = toplam
             stat["Saat"] = toplam_saat
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             stats.append(stat)
 
         st.table(pd.DataFrame(stats))
@@ -531,6 +598,7 @@ def _cozum_olustur():
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan Modu)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -546,8 +614,10 @@ def _cozum_olustur():
                 count = sum(1 for g in schedule.values() if p in g.get(alan_isim, []))
                 stat[alan_isim] = count
                 toplam += count
+            hedef = hedefler.get(p, default_target)
             stat["TOPLAM"] = toplam
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             alan_stats.append(stat)
 
         st.table(pd.DataFrame(alan_stats))
@@ -577,6 +647,7 @@ def _cozum_olustur():
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu!")
+        _cozum_karnesi_goster(solver, toplam_sapma)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 

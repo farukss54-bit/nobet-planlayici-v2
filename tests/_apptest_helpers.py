@@ -15,11 +15,32 @@ yollarini gecici bir dizine yonlendirmek CAGIRAN TARAFIN sorumlulugundadir
 """
 from pathlib import Path
 
+from streamlit.runtime.pages_manager import PagesManager
 from streamlit.testing.v1 import AppTest
 
 import storage
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
+
+
+def from_function_izole(fn, monkeypatch, **kwargs) -> AppTest:
+    """
+    AppTest.from_function icin izolasyon sarmalayicisi.
+
+    Streamlit'in PagesManager.uses_pages_directory bayragi surec-geneli,
+    tembel-baslatilan (None -> True/False) ve KALICI: ilk AppTest calismasi
+    ana script'in yaninda bir `pages/` dizini gorurse (bu depoda app.py'nin
+    yaninda BOS bir `pages/` dizini var) bayragi True'ya kilitler. Sonraki
+    TUM AppTest.from_function/from_string cagrilari - kendi gecici script'i
+    icin hicbir pages/ dizini olmasa bile - bu kalinti True yuzunden
+    _mpa_v1 (cok sayfali uygulama) yoluna sapar ve sentetik ana sayfa icin
+    "basligi bos" hatasi firlatir. Bu fonksiyon her cagridan once bayragi
+    False'a sabitler (monkeypatch teardown'da otomatik geri alinir).
+    """
+    monkeypatch.setattr(PagesManager, "uses_pages_directory", False)
+    at = AppTest.from_function(fn, **kwargs)
+    at.run()
+    return at
 
 
 def temel_session_state(overrides: dict) -> dict:
