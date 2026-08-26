@@ -309,6 +309,7 @@ def _cozum_olustur():
     mod_str = f" ({', '.join(mod_bilgi)})" if mod_bilgi else ""
     st.info(f"Solver çalıştırılıyor...{mod_str}")
 
+    solver = None
     try:
         solver = NobetSolver(solver_input)
         schedule = solver.coz()
@@ -326,9 +327,16 @@ def _cozum_olustur():
         )
         aylik_plani_kaydet(plan)
 
-    except Exception as e:
-        st.error("❌ Çözüm bulunamadı.")
-        st.caption(str(e))
+    except ValueError as e:
+        # Bilinçli red: G1.2 pre-solve doğrulaması (örn. hedef > kişisel
+        # maksimum) VEYA solver'ın INFEASIBLE raise'i (ikisi de ValueError).
+        # Bu bir KURAL sorunu — teşhis anlamlı, çalıştırılır.
+        meta = getattr(solver, "cozum_meta", None) if solver is not None else None
+        baslik = "⚠️ Girdi kuralları çözümü engelliyor"
+        if meta:
+            baslik += f" (status: {meta['status']})"
+        st.error(baslik)
+        st.markdown(f"**{e}**")
 
         # Gelişmiş teşhis
         teshisler = gelismis_teshis(
@@ -367,6 +375,14 @@ def _cozum_olustur():
                 with st.expander(f"🟡 {t.mesaj}", expanded=False):
                     st.json(t.detay)
 
+        st.stop()
+
+    except Exception as e:
+        # Kod hatası (TypeError, KeyError, AttributeError, ...) - bu bir
+        # KURAL sorunu DEĞİL. Teşhis burada yanıltıcı olur, ÇALIŞTIRILMAZ.
+        st.error("❌ Beklenmedik uygulama hatası")
+        st.caption("Bu bir kural sorunu değil — geliştiriciye hata raporu iletebilirsiniz.")
+        st.exception(e)
         st.stop()
 
     # Sonuç tablosu - mod'a göre farklı gösterim
