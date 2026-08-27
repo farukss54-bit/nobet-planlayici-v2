@@ -137,6 +137,12 @@ def render_personel_tab(session_to_ayarlar_func=None):
             if eski_isim != yeni_isim:
                 personel_referanslarini_temizle(st.session_state, eski_isim, yeni_isim)
                 degisiklik_yapildi = True
+
+            # Anlik uyari (kaydetmeyi engellemez - cozum kapisi G2.6'da durdurur)
+            if not yeni_isim.strip():
+                st.warning("⚠ Boş isim")
+            elif st.session_state["personel_list"].count(yeni_isim) > 1:
+                st.warning(f"⚠ '{yeni_isim}' başka bir satırda da var")
         with cols[1]:
             p_name = st.session_state["personel_list"][i]
             current_target = st.session_state.get("personel_targets", {}).get(p_name, default_target)

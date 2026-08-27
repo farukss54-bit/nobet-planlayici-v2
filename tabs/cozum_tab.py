@@ -156,6 +156,83 @@ def _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing):
     st.error(mesaj)
 
 
+def _girdi_dogrula(solver_input, kidem_grubu_isimleri):
+    """
+    Solver kurulumundan ÖNCE çağrılan çözüm kapısı. Saf fonksiyon
+    (Streamlit'e bağımlı değil, doğrudan test edilebilir).
+
+    Döner: (hatalar, uyarilar) - ikisi de Türkçe mesaj listesi.
+    HATA: çözümü durdurur (sessiz veri bozulmasına yol açan girdiler).
+    UYARI: çözüm devam eder ama kullanıcıya gösterilir.
+    """
+    hatalar = []
+    uyarilar = []
+
+    personeller = solver_input.personeller
+    kidem_grubu_isimleri = set(kidem_grubu_isimleri)
+
+    # --- HATALAR ---
+    if any(not p.strip() for p in personeller):
+        hatalar.append("Boş veya yalnızca boşluktan oluşan bir personel adı var.")
+
+    gorulme_sayisi = {}
+    for p in personeller:
+        gorulme_sayisi[p] = gorulme_sayisi.get(p, 0) + 1
+    for p, sayi in gorulme_sayisi.items():
+        if sayi > 1:
+            hatalar.append(
+                f"'{p}' adı {sayi} kişiye ait — personel isimleri benzersiz olmalı "
+                f"(izin/hedef/yetkinlik kayıtları sessizce birleşir)."
+            )
+
+    for alan in solver_input.alanlar:
+        for grup_isim, kural in (alan.kidem_kurallari or {}).items():
+            if kural.get("min", 0) <= 0:
+                continue
+            if grup_isim not in kidem_grubu_isimleri:
+                hatalar.append(
+                    f"'{alan.isim}' alanının kıdem kuralı tanımsız bir grubu ('{grup_isim}') "
+                    f"işaret ediyor."
+                )
+                continue
+            uye_var = any(
+                solver_input.personel_kidem_gruplari.get(p) == grup_isim
+                for p in personeller
+            )
+            if not uye_var:
+                hatalar.append(
+                    f"'{alan.isim}' alanı '{grup_isim}' grubundan en az {kural['min']} kişi "
+                    f"istiyor ama bu gruba üye hiç kimse yok — kural asla sağlanamaz."
+                )
+
+    # --- UYARILAR ---
+    for p, grup in solver_input.personel_kidem_gruplari.items():
+        if grup and grup not in kidem_grubu_isimleri:
+            uyarilar.append(f"'{p}': kıdem grubu ('{grup}') tanımsız.")
+
+    alan_isimleri = {a.isim for a in solver_input.alanlar}
+    for p, yetkin in solver_input.personel_alan_yetkinlikleri.items():
+        for a in yetkin:
+            if a not in alan_isimleri:
+                uyarilar.append(f"'{p}': yetkinlik listesinde tanımsız alan ('{a}').")
+
+    vardiya_isimleri = {v.isim for v in solver_input.vardiyalar}
+    for p, kisitlar in solver_input.personel_vardiya_kisitlari.items():
+        for v in kisitlar:
+            if v not in vardiya_isimleri:
+                uyarilar.append(f"'{p}': vardiya kısıtında tanımsız vardiya ('{v}').")
+
+    personel_seti = set(personeller)
+    for p in solver_input.izinler:
+        if p not in personel_seti:
+            uyarilar.append(f"İzin listesinde personel listesinde olmayan isim var: '{p}'.")
+    for p in solver_input.hedefler:
+        if p not in personel_seti:
+            uyarilar.append(f"Hedef listesinde personel listesinde olmayan isim var: '{p}'.")
+
+    return hatalar, uyarilar
+
+
 def render_cozum_tab():
     st.subheader("✅ Çözüm")
 
@@ -383,6 +460,20 @@ def _cozum_olustur():
         onceki_ay_kuyrugu=onceki_kuyruk,
         config=config
     )
+
+    # Girdi kimlik doğrulaması (çözüm kapısı) - solver kurulumundan ÖNCE
+    kidem_grubu_isimleri = [g["isim"] for g in st.session_state.get("kidem_gruplari", [])]
+    dogrulama_hatalari, dogrulama_uyarilari = _girdi_dogrula(solver_input, kidem_grubu_isimleri)
+
+    if dogrulama_hatalari:
+        st.error(
+            "**Girdi doğrulaması başarısız — çözüm başlatılmadı:**\n"
+            + "\n".join(f"- {h}" for h in dogrulama_hatalari)
+        )
+        st.stop()
+
+    for u in dogrulama_uyarilari:
+        st.warning(u)
 
     mod_bilgi = []
     if alanlar:
