@@ -23,7 +23,12 @@ def render_eslesmeler_tab():
             a = st.selectbox("Personel A", options=personeller, key="wp_a")
             b_options = [p for p in personeller if p != a]
             b = st.selectbox("Personel B", options=b_options, key="wp_b")
-            min_k = st.number_input("Minimum birlikte gün", min_value=1, max_value=31, value=2, key="wp_min")
+            min_k = st.number_input(
+                "Minimum birlikte gün",
+                min_value=0, max_value=31, value=0, key="wp_min",
+                help="0 = tercih (mümkünse birlikte, zorunlu değil); "
+                     "1+ = en az bu kadar gün birlikte ZORUNLU"
+            )
 
             if st.button("➕ Ekle", key="wp_add"):
                 aa, bb = sorted([a, b])
@@ -63,7 +68,8 @@ def render_eslesmeler_tab():
             else:
                 for i, item in enumerate(st.session_state["want_pairs_list"]):
                     c1, c2 = st.columns([6, 2])
-                    c1.write(f"• {item['a']} ↔ {item['b']} (min: {item['min']})")
+                    etiket = "tercih" if item["min"] <= 0 else f"zorunlu ≥{item['min']}"
+                    c1.write(f"• {item['a']} ↔ {item['b']} ({etiket})")
                     if c2.button("Sil", key=f"wp_del_{i}"):
                         st.session_state["want_pairs_list"].pop(i)
                         st.rerun()
