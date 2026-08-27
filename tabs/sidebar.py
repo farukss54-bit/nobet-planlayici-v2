@@ -71,6 +71,9 @@ def render_sidebar(session_to_ayarlar_func):
 
         if planlar:
             for plan in planlar[:5]:  # Son 5 plan
+                if plan.get("bozuk"):
+                    st.caption(f"⚠ bozuk dosya ({plan['dosya']})")
+                    continue
                 ay_adi = datetime(plan["yil"], plan["ay"], 1).strftime("%B %Y")
                 durum = "✓" if plan["sonuc_var"] else "○"
                 st.caption(f"{durum} {ay_adi}")

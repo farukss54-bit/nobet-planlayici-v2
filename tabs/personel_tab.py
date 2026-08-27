@@ -8,9 +8,19 @@ from storage import ayarlari_kaydet
 from utils import personel_referanslarini_temizle, hesapla_otomatik_hedef, ay_gun_sayisi
 
 
+KAYIT_HATASI_MESAJI = "Kaydedilemedi — değişiklikler kalıcı olmayabilir"
+
+
 def render_personel_tab(session_to_ayarlar_func=None):
     st.subheader("👥 Kişiler ve Hedefler")
     degisiklik_yapildi = False
+
+    # st.rerun() sonrası gosterilmesi gereken kayit hatasi (rerun oncesi
+    # st.error cagrisi rerun ile birlikte kaybolur, bu yuzden session_state
+    # uzerinden bir sonraki calismaya tasinir).
+    bekleyen_hata = st.session_state.pop("_kayit_hata_mesaji", None)
+    if bekleyen_hata:
+        st.error(bekleyen_hata)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -48,7 +58,8 @@ def render_personel_tab(session_to_ayarlar_func=None):
     if otomatik_aktif != st.session_state.get("otomatik_hedef", True):
         st.session_state["otomatik_hedef"] = otomatik_aktif
         if session_to_ayarlar_func is not None:
-            ayarlari_kaydet(session_to_ayarlar_func())
+            if not ayarlari_kaydet(session_to_ayarlar_func()):
+                st.error(KAYIT_HATASI_MESAJI)
 
     st.divider()
 
@@ -103,7 +114,8 @@ def render_personel_tab(session_to_ayarlar_func=None):
                     degisiklik_yapildi = True
 
                 if session_to_ayarlar_func is not None:
-                    ayarlari_kaydet(session_to_ayarlar_func())
+                    if not ayarlari_kaydet(session_to_ayarlar_func()):
+                        st.session_state["_kayit_hata_mesaji"] = KAYIT_HATASI_MESAJI
                 st.rerun()
         with btn_col2:
             st.caption("💡 Butona basınca herkese 'toplam ihtiyaç ÷ personel' formülüyle eşit nöbet dağıtılır. Sonra dilediğiniz kişiyi elle değiştirebilirsiniz.")
@@ -142,4 +154,5 @@ def render_personel_tab(session_to_ayarlar_func=None):
 
     # Değişiklik varsa ayarları otomatik kaydet
     if degisiklik_yapildi and session_to_ayarlar_func is not None:
-        ayarlari_kaydet(session_to_ayarlar_func())
+        if not ayarlari_kaydet(session_to_ayarlar_func()):
+            st.error(KAYIT_HATASI_MESAJI)

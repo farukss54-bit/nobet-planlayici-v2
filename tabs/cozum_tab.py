@@ -410,7 +410,8 @@ def _cozum_olustur():
             sonuc={str(k): v for k, v in schedule.items()},
             sonuc_alanlı=bool(alanlar)
         )
-        aylik_plani_kaydet(plan)
+        if not aylik_plani_kaydet(plan):
+            st.error("Kaydedilemedi — değişiklikler kalıcı olmayabilir")
 
     except ValueError as e:
         # Bilinçli red: G1.2 pre-solve doğrulaması (örn. hedef > kişisel
