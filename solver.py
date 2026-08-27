@@ -825,12 +825,16 @@ class NobetSolver:
                 for a_idx, alan in enumerate(self.input.alanlar):
                     sonuc[g][alan.isim] = {}
                     for v_idx, vardiya in enumerate(self.input.vardiyalar):
+                        # Gecersiz alan-vardiya kombinasyonu yazilmaz; gecerli
+                        # olan bos liste olsa bile yazilir (bos slot bilgisi
+                        # kaybolmasin - bkz. G2.4).
+                        if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                            continue
                         kisiler = [isim for p_idx, isim in enumerate(self.input.personeller)
                                   if solver.Value(self.x[p_idx, g, a_idx, v_idx]) == 1]
-                        if kisiler:
-                            sonuc[g][alan.isim][vardiya.isim] = kisiler
+                        sonuc[g][alan.isim][vardiya.isim] = kisiler
             return sonuc
-        
+
         elif self.input.vardiya_modu:
             sonuc = {}
             for g in range(1, self.gun_sayisi + 1):
@@ -838,8 +842,7 @@ class NobetSolver:
                 for v_idx, vardiya in enumerate(self.input.vardiyalar):
                     kisiler = [isim for p_idx, isim in enumerate(self.input.personeller)
                               if solver.Value(self.x[p_idx, g, 0, v_idx]) == 1]
-                    if kisiler:
-                        sonuc[g][vardiya.isim] = kisiler
+                    sonuc[g][vardiya.isim] = kisiler
             return sonuc
         
         elif self.input.coklu_alan_modu:

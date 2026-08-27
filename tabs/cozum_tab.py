@@ -125,6 +125,37 @@ def _cozum_karnesi_goster(solver, toplam_sapma):
         st.warning("**Uyarılar:**\n" + "\n".join(f"- {u}" for u in uyarilar))
 
 
+BOS_SLOT_ISARETI = "⚠ BOŞ"
+GECERSIZ_KOMBINASYON_ISARETI = "—"
+
+
+def _hucre_degeri(container: dict, key: str) -> tuple:
+    """
+    (metin, bos_mu) döner.
+    - key container'da yoksa: geçersiz alan-vardiya kombinasyonu -> "—"
+    - key var ama liste boşsa: dolması gereken bir slot boş kalmış -> "⚠ BOŞ"
+    - key var ve liste doluysa: isimler
+    """
+    if key not in container:
+        return GECERSIZ_KOMBINASYON_ISARETI, False
+    kisiler = container[key]
+    if kisiler:
+        return ", ".join(kisiler), False
+    return BOS_SLOT_ISARETI, True
+
+
+def _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing):
+    if bos_sayisi <= 0:
+        return
+    mesaj = f"⚠️ {bos_sayisi} slot boş kaldı — plan bu haliyle yayınlanmamalı."
+    if enforce_minimum_staffing:
+        mesaj += (
+            " Zorunlu minimum doluluk AÇIKKEN bu görülmemeliydi — bu bir hata "
+            "belirtisi olabilir, lütfen bildirin."
+        )
+    st.error(mesaj)
+
+
 def render_cozum_tab():
     st.subheader("✅ Çözüm")
 
@@ -459,6 +490,7 @@ def _cozum_olustur():
         vardiya_isimleri = [v.isim for v in vardiyalar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -475,9 +507,11 @@ def _cozum_olustur():
             for alan_isim in alan_isimleri:
                 alan_data = gun_data.get(alan_isim, {})
                 for vardiya_isim in vardiya_isimleri:
-                    kisiler = alan_data.get(vardiya_isim, [])
                     col_name = f"{alan_isim} / {vardiya_isim}"
-                    row[col_name] = ", ".join(kisiler) if kisiler else "-"
+                    metin, bos_mu = _hucre_degeri(alan_data, vardiya_isim)
+                    row[col_name] = metin
+                    if bos_mu:
+                        bos_sayisi += 1
 
             rows.append(row)
 
@@ -485,6 +519,7 @@ def _cozum_olustur():
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan + Vardiya)")
         _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -522,6 +557,7 @@ def _cozum_olustur():
         vardiya_isimleri = [v.isim for v in vardiyalar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -536,8 +572,10 @@ def _cozum_olustur():
 
             # Her vardiya için sütun
             for vardiya_isim in vardiya_isimleri:
-                kisiler = gun_data.get(vardiya_isim, [])
-                row[vardiya_isim] = ", ".join(kisiler) if kisiler else "-"
+                metin, bos_mu = _hucre_degeri(gun_data, vardiya_isim)
+                row[vardiya_isim] = metin
+                if bos_mu:
+                    bos_sayisi += 1
 
             rows.append(row)
 
@@ -545,6 +583,7 @@ def _cozum_olustur():
 
         st.success("🎉 Çözüm bulundu! (Vardiya Modu)")
         _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -576,6 +615,7 @@ def _cozum_olustur():
         alan_isimleri = [a.isim for a in alanlar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -590,8 +630,10 @@ def _cozum_olustur():
 
             # Her alan için sütun
             for alan_isim in alan_isimleri:
-                kisiler = gun_data.get(alan_isim, [])
-                row[alan_isim] = ", ".join(kisiler) if kisiler else "-"
+                metin, bos_mu = _hucre_degeri(gun_data, alan_isim)
+                row[alan_isim] = metin
+                if bos_mu:
+                    bos_sayisi += 1
 
             rows.append(row)
 
@@ -599,6 +641,7 @@ def _cozum_olustur():
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan Modu)")
         _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -695,6 +738,7 @@ def _cozum_olustur():
 
     fill_weekend = PatternFill(start_color="FFF4E6", end_color="FFF4E6", fill_type="solid")
     fill_holiday = PatternFill(start_color="FFE0E0", end_color="FFE0E0", fill_type="solid")
+    fill_bos = PatternFill(start_color="FF4444", end_color="FF4444", fill_type="solid")
 
     for r_i, row in enumerate(rows, start=2):
         dt = datetime(yil, ay, row["Gün"])
@@ -702,11 +746,15 @@ def _cozum_olustur():
         is_holiday = row["Gün"] in tatiller
 
         for c_i, h in enumerate(fieldnames, start=1):
-            cell = ws.cell(row=r_i, column=c_i, value=row.get(h, ""))
+            deger = row.get(h, "")
+            bos_mu = deger == BOS_SLOT_ISARETI
+            cell = ws.cell(row=r_i, column=c_i, value=("BOŞ" if bos_mu else deger))
             if c_i <= 5:
                 cell.alignment = center
 
-            if is_holiday:
+            if bos_mu:
+                cell.fill = fill_bos
+            elif is_holiday:
                 cell.fill = fill_holiday
             elif is_weekend:
                 cell.fill = fill_weekend
