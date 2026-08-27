@@ -288,6 +288,10 @@ def _cozum_olustur():
             gun_sayisi, alanlar_data, vardiyalar_data, personeller, izin_map, ardisik
         )
 
+    # Kişisel hedefin grup vardiya kırılımının önüne geçtiği kişiler
+    # (kırılım ölçeklenmiyor/uygulanmıyor - yalnızca görünür kılınıyor, bkz. G2.7)
+    kirilimi_ezilen_kisiler = []
+
     for p in personeller:
         # Önce kişisel hedefe bak
         kisisel_hedef = st.session_state.get("personel_targets", {}).get(p)
@@ -296,6 +300,11 @@ def _cozum_olustur():
         if kisisel_hedef is not None:
             # Kişisel hedef var (kullanıcı açıkça girmiş)
             hedefler[p] = kisisel_hedef
+
+            if vardiyalar_data and kidem in grup_vardiya_hedefleri:
+                v_hedef = grup_vardiya_hedefleri[kidem]
+                if v_hedef and any(v > 0 for v in v_hedef.values()):
+                    kirilimi_ezilen_kisiler.append(p)
         elif otomatik_aktif and p in otomatik_hedefler:
             # Otomatik hesaplanan hedef
             hedefler[p] = otomatik_hedefler[p]
@@ -474,6 +483,12 @@ def _cozum_olustur():
 
     for u in dogrulama_uyarilari:
         st.warning(u)
+
+    if kirilimi_ezilen_kisiler:
+        st.info(
+            "Şu kişilerde kişisel hedef, grup vardiya kırılımının önüne geçti: "
+            + ", ".join(kirilimi_ezilen_kisiler)
+        )
 
     mod_bilgi = []
     if alanlar:
