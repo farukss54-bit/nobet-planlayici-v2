@@ -8,9 +8,13 @@ Dataclass kullanımı sayesinde:
 - Kod okunabilirliği artar
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Optional
 from datetime import datetime
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,24 +29,40 @@ class VardiyaTipi:
     renk: str = "#808080"
     minimum_staffing: int = 1  # Bu vardiya tipinde en az kaç kişi olmalı
     
+    @staticmethod
+    def _dakikaya_cevir(hhmm: str) -> Optional[int]:
+        try:
+            saat, dk = map(int, hhmm.split(":"))
+            return saat * 60 + dk
+        except (ValueError, AttributeError):
+            return None
+
     @property
     def saat(self) -> int:
-        """Vardiya süresini saat olarak hesaplar"""
-        try:
-            b_saat, b_dk = map(int, self.baslangic.split(":"))
-            s_saat, s_dk = map(int, self.bitis.split(":"))
+        """Vardiya süresini saat olarak hesaplar. Parse hatasında 8 varsayılır (bkz. saat_gecerli)."""
+        baslangic_dk = self._dakikaya_cevir(self.baslangic)
+        bitis_dk = self._dakikaya_cevir(self.bitis)
 
-            baslangic_dk = b_saat * 60 + b_dk
-            bitis_dk = s_saat * 60 + s_dk
-
-            # Gece geçişi varsa (örn: 16:00 - 08:00)
-            if bitis_dk <= baslangic_dk:
-                bitis_dk += 24 * 60
-
-            return (bitis_dk - baslangic_dk) // 60
-        except (ValueError, AttributeError):
-            # Fallback to default 8-hour shift if parsing fails
+        if baslangic_dk is None or bitis_dk is None:
+            logger.warning(
+                f"VardiyaTipi '{self.isim}': saat parse edilemedi "
+                f"(baslangic={self.baslangic!r}, bitis={self.bitis!r}) - 8 varsayıldı."
+            )
             return 8
+
+        # Gece geçişi varsa (örn: 16:00 - 08:00)
+        if bitis_dk <= baslangic_dk:
+            bitis_dk += 24 * 60
+
+        return (bitis_dk - baslangic_dk) // 60
+
+    @property
+    def saat_gecerli(self) -> bool:
+        """False ise .saat parse hatası nedeniyle 8'e varsayılan yapılmıştır."""
+        return (
+            self._dakikaya_cevir(self.baslangic) is not None
+            and self._dakikaya_cevir(self.bitis) is not None
+        )
     
     def to_dict(self) -> dict:
         return {
@@ -288,7 +308,7 @@ class Ayarlar:
     iki_gun_bosluk_tercihi: int = 300
     
     # Otomatik hedef hesaplama
-    otomatik_hedef: bool = False
+    otomatik_hedef: bool = True
     
     def to_dict(self) -> dict:
         return {
