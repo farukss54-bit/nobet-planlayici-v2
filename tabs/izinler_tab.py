@@ -9,6 +9,34 @@ from utils import (
 )
 
 
+def _tanimayan_parcalari_bul(text: str, max_gun: int) -> list:
+    """
+    gun_parse ile AYNI parçalama/kural mantığını (imzası değişmeden)
+    UI tarafında yeniden tarayıp hangi parçaların hiç güne dönüşmediğini
+    bulur (int parse hatası VEYA ay aralığının tamamen dışında kalma).
+    """
+    atlanan = []
+    for parca in [p.strip() for p in text.split(",") if p.strip()]:
+        if "-" in parca:
+            try:
+                a, b = parca.split("-", 1)
+                a, b = int(a.strip()), int(b.strip())
+                if a > b:
+                    a, b = b, a
+                if not any(1 <= g <= max_gun for g in range(a, b + 1)):
+                    atlanan.append(parca)
+            except ValueError:
+                atlanan.append(parca)
+        else:
+            try:
+                g = int(parca)
+                if not (1 <= g <= max_gun):
+                    atlanan.append(parca)
+            except ValueError:
+                atlanan.append(parca)
+    return atlanan
+
+
 def render_izinler_tab():
     st.subheader("🏖️ İzinler ve Tercihler")
 
@@ -92,3 +120,8 @@ def render_izinler_tab():
             manuel_gunler = gun_parse(manuel_input, gun_sayisi)
             if manuel_gunler:
                 st.caption(f"  → Eklenecek: {sorted(manuel_gunler)}")
+                atlanan_parcalar = _tanimayan_parcalari_bul(manuel_input, gun_sayisi)
+                if atlanan_parcalar:
+                    st.warning(f"Şu parçalar atlandı: {', '.join(atlanan_parcalar)}")
+            else:
+                st.warning("Hiçbir gün tanınamadı — virgülle ayırın: 15, 16 veya 15-18")

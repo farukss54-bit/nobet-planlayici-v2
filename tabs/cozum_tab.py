@@ -26,6 +26,213 @@ from config import (
 )
 
 
+def _staffing_taban_tavan(alanlar, vardiyalar, gun_sayisi, enforce_minimum_staffing):
+    """
+    Günlük zorunlu doluluk tabanı ve (varsa) teorik doluluk tavanını hesaplar.
+
+    Solver'daki HARD kısıt döngüleriyle (_vardiya_minimum_kontenjan_hard,
+    _alan_kontenjan_soft'un max_kontenjan hard-cap'i) BİREBİR AYNI kombinasyon
+    filtresini kullanır: alan.vardiya_tipleri tanımlıysa ve bu vardiya o
+    listede yoksa kombinasyon sayılmaz.
+
+    Döner: (hard_taban, teorik_tavan). teorik_tavan tanımsızsa (kapasite üst
+    sınırı olmayan bir mod veya en az bir alanda max_kontenjan boşsa) None.
+    """
+    coklu_alan_modu = bool(alanlar)
+    vardiya_modu = bool(vardiyalar)
+
+    hard_taban_gunluk = 0
+    if vardiya_modu and enforce_minimum_staffing:
+        if coklu_alan_modu:
+            for alan in alanlar:
+                for vardiya in vardiyalar:
+                    if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                        continue
+                    hard_taban_gunluk += max(alan.minimum_staffing, vardiya.minimum_staffing)
+        else:
+            for vardiya in vardiyalar:
+                hard_taban_gunluk += vardiya.minimum_staffing
+
+    teorik_tavan_gunluk = 0
+    tavan_tanimli = coklu_alan_modu
+    if coklu_alan_modu:
+        vardiya_dongu = vardiyalar if vardiya_modu else [None]
+        for alan in alanlar:
+            for vardiya in vardiya_dongu:
+                if vardiya is not None and vardiya_modu and alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                    continue
+                if not alan.max_kontenjan or alan.max_kontenjan <= 0:
+                    tavan_tanimli = False
+                    continue
+                teorik_tavan_gunluk += alan.max_kontenjan
+
+    hard_taban = hard_taban_gunluk * gun_sayisi
+    teorik_tavan = teorik_tavan_gunluk * gun_sayisi if tavan_tanimli else None
+    return hard_taban, teorik_tavan
+
+
+def _toplam_sayim_cikar(schedule, has_alanlar, has_vardiyalar, personeller):
+    """Modden bağımsız olarak kişi başı gerçekleşen toplam atama sayısını çıkarır."""
+    sayim = {p: 0 for p in personeller}
+    for gun_data in schedule.values():
+        if has_alanlar and has_vardiyalar:
+            for alan_data in gun_data.values():
+                if isinstance(alan_data, dict):
+                    for kisiler in alan_data.values():
+                        for k in kisiler:
+                            if k in sayim:
+                                sayim[k] += 1
+        elif has_vardiyalar or has_alanlar:
+            for kisiler in gun_data.values():
+                for k in kisiler:
+                    if k in sayim:
+                        sayim[k] += 1
+        else:
+            isimler = gun_data if isinstance(gun_data, list) else []
+            for k in isimler:
+                if k in sayim:
+                    sayim[k] += 1
+    return sayim
+
+
+def _cozum_karnesi_goster(solver, toplam_sapma):
+    """
+    G0.1'in cozum_meta'sini ve G1.3'un solver.uyarilar'ini kullanicidan
+    gizlemez: durum (OPTIMAL/FEASIBLE), sure ve toplam hedef sapmasi
+    her zaman gorunur.
+    """
+    meta = getattr(solver, "cozum_meta", None) or {}
+    status = meta.get("status", "?")
+    sure = meta.get("sure_saniye")
+
+    if status == "OPTIMAL":
+        durum_metni = "En iyi çözüm (OPTIMAL)"
+    elif status == "FEASIBLE":
+        durum_metni = "Geçerli çözüm — süre limitine takıldı (FEASIBLE)"
+    else:
+        durum_metni = status
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Durum", durum_metni)
+    col2.metric("Süre", f"{sure:.1f} sn" if sure is not None else "?")
+    col3.metric("Toplam Hedef Sapması", toplam_sapma)
+
+    if status == "FEASIBLE":
+        st.info("Süre limiti içinde en iyi bulunan plan bu; sapmalar süre artırılarak azalabilir.")
+
+    uyarilar = getattr(solver, "uyarilar", None)
+    if uyarilar:
+        st.warning("**Uyarılar:**\n" + "\n".join(f"- {u}" for u in uyarilar))
+
+
+BOS_SLOT_ISARETI = "⚠ BOŞ"
+GECERSIZ_KOMBINASYON_ISARETI = "—"
+
+
+def _hucre_degeri(container: dict, key: str) -> tuple:
+    """
+    (metin, bos_mu) döner.
+    - key container'da yoksa: geçersiz alan-vardiya kombinasyonu -> "—"
+    - key var ama liste boşsa: dolması gereken bir slot boş kalmış -> "⚠ BOŞ"
+    - key var ve liste doluysa: isimler
+    """
+    if key not in container:
+        return GECERSIZ_KOMBINASYON_ISARETI, False
+    kisiler = container[key]
+    if kisiler:
+        return ", ".join(kisiler), False
+    return BOS_SLOT_ISARETI, True
+
+
+def _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing):
+    if bos_sayisi <= 0:
+        return
+    mesaj = f"⚠️ {bos_sayisi} slot boş kaldı — plan bu haliyle yayınlanmamalı."
+    if enforce_minimum_staffing:
+        mesaj += (
+            " Zorunlu minimum doluluk AÇIKKEN bu görülmemeliydi — bu bir hata "
+            "belirtisi olabilir, lütfen bildirin."
+        )
+    st.error(mesaj)
+
+
+def _girdi_dogrula(solver_input, kidem_grubu_isimleri):
+    """
+    Solver kurulumundan ÖNCE çağrılan çözüm kapısı. Saf fonksiyon
+    (Streamlit'e bağımlı değil, doğrudan test edilebilir).
+
+    Döner: (hatalar, uyarilar) - ikisi de Türkçe mesaj listesi.
+    HATA: çözümü durdurur (sessiz veri bozulmasına yol açan girdiler).
+    UYARI: çözüm devam eder ama kullanıcıya gösterilir.
+    """
+    hatalar = []
+    uyarilar = []
+
+    personeller = solver_input.personeller
+    kidem_grubu_isimleri = set(kidem_grubu_isimleri)
+
+    # --- HATALAR ---
+    if any(not p.strip() for p in personeller):
+        hatalar.append("Boş veya yalnızca boşluktan oluşan bir personel adı var.")
+
+    gorulme_sayisi = {}
+    for p in personeller:
+        gorulme_sayisi[p] = gorulme_sayisi.get(p, 0) + 1
+    for p, sayi in gorulme_sayisi.items():
+        if sayi > 1:
+            hatalar.append(
+                f"'{p}' adı {sayi} kişiye ait — personel isimleri benzersiz olmalı "
+                f"(izin/hedef/yetkinlik kayıtları sessizce birleşir)."
+            )
+
+    for alan in solver_input.alanlar:
+        for grup_isim, kural in (alan.kidem_kurallari or {}).items():
+            if kural.get("min", 0) <= 0:
+                continue
+            if grup_isim not in kidem_grubu_isimleri:
+                hatalar.append(
+                    f"'{alan.isim}' alanının kıdem kuralı tanımsız bir grubu ('{grup_isim}') "
+                    f"işaret ediyor."
+                )
+                continue
+            uye_var = any(
+                solver_input.personel_kidem_gruplari.get(p) == grup_isim
+                for p in personeller
+            )
+            if not uye_var:
+                hatalar.append(
+                    f"'{alan.isim}' alanı '{grup_isim}' grubundan en az {kural['min']} kişi "
+                    f"istiyor ama bu gruba üye hiç kimse yok — kural asla sağlanamaz."
+                )
+
+    # --- UYARILAR ---
+    for p, grup in solver_input.personel_kidem_gruplari.items():
+        if grup and grup not in kidem_grubu_isimleri:
+            uyarilar.append(f"'{p}': kıdem grubu ('{grup}') tanımsız.")
+
+    alan_isimleri = {a.isim for a in solver_input.alanlar}
+    for p, yetkin in solver_input.personel_alan_yetkinlikleri.items():
+        for a in yetkin:
+            if a not in alan_isimleri:
+                uyarilar.append(f"'{p}': yetkinlik listesinde tanımsız alan ('{a}').")
+
+    vardiya_isimleri = {v.isim for v in solver_input.vardiyalar}
+    for p, kisitlar in solver_input.personel_vardiya_kisitlari.items():
+        for v in kisitlar:
+            if v not in vardiya_isimleri:
+                uyarilar.append(f"'{p}': vardiya kısıtında tanımsız vardiya ('{v}').")
+
+    personel_seti = set(personeller)
+    for p in solver_input.izinler:
+        if p not in personel_seti:
+            uyarilar.append(f"İzin listesinde personel listesinde olmayan isim var: '{p}'.")
+    for p in solver_input.hedefler:
+        if p not in personel_seti:
+            uyarilar.append(f"Hedef listesinde personel listesinde olmayan isim var: '{p}'.")
+
+    return hatalar, uyarilar
+
+
 def render_cozum_tab():
     st.subheader("✅ Çözüm")
 
@@ -81,6 +288,10 @@ def _cozum_olustur():
             gun_sayisi, alanlar_data, vardiyalar_data, personeller, izin_map, ardisik
         )
 
+    # Kişisel hedefin grup vardiya kırılımının önüne geçtiği kişiler
+    # (kırılım ölçeklenmiyor/uygulanmıyor - yalnızca görünür kılınıyor, bkz. G2.7)
+    kirilimi_ezilen_kisiler = []
+
     for p in personeller:
         # Önce kişisel hedefe bak
         kisisel_hedef = st.session_state.get("personel_targets", {}).get(p)
@@ -89,6 +300,11 @@ def _cozum_olustur():
         if kisisel_hedef is not None:
             # Kişisel hedef var (kullanıcı açıkça girmiş)
             hedefler[p] = kisisel_hedef
+
+            if vardiyalar_data and kidem in grup_vardiya_hedefleri:
+                v_hedef = grup_vardiya_hedefleri[kidem]
+                if v_hedef and any(v > 0 for v in v_hedef.values()):
+                    kirilimi_ezilen_kisiler.append(p)
         elif otomatik_aktif and p in otomatik_hedefler:
             # Otomatik hesaplanan hedef
             hedefler[p] = otomatik_hedefler[p]
@@ -145,14 +361,20 @@ def _cozum_olustur():
         for item in st.session_state.get("soft_no_pairs_list", [])
     ]
 
-    # Toplam hedef hesapla (feasibility kontrolü için)
-    toplam_hedef = sum(hedefler.values())
+    # Vardiya tipleri (taban/tavan hesabı vardiyalara ihtiyaç duyduğu için önce kurulur)
+    vardiyalar = [
+        VardiyaTanimi(
+            isim=v["isim"],
+            baslangic=v.get("baslangic", "08:00"),
+            bitis=v.get("bitis", "16:00"),
+            minimum_staffing=v.get("minimum_staffing", 1)
+        )
+        for v in vardiyalar_data
+    ]
 
     # Çoklu alan modu kontrolü
     alan_modu_aktif = st.session_state.get("alan_modu_aktif", False)
     alanlar_data = st.session_state.get("alanlar", [])
-    vardiyalar_data = st.session_state.get("vardiya_tipleri", [])
-    vardiya_sayisi = len(vardiyalar_data) if vardiyalar_data else 1
 
     if alan_modu_aktif and alanlar_data:
         alanlar = [
@@ -166,30 +388,30 @@ def _cozum_olustur():
             )
             for a in alanlar_data
         ]
-        toplam_kontenjan = sum(a.gunluk_kontenjan for a in alanlar)
-        gereken_toplam = toplam_kontenjan * gun_sayisi * vardiya_sayisi
-
-        if toplam_hedef < gereken_toplam:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {toplam_kontenjan}/gün x {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
-            st.stop()
     else:
         alanlar = []
-        gereken_toplam = gun_sayisi * vardiya_sayisi
-        if toplam_hedef < gereken_toplam:
-            st.error(f"İmkânsız: Toplam hedef ({toplam_hedef}) < gereken ({gereken_toplam} = {gun_sayisi} gün x {vardiya_sayisi} vardiya)")
-            st.stop()
 
-    # Vardiya tipleri
-    vardiyalar_data = st.session_state.get("vardiya_tipleri", [])
-    vardiyalar = [
-        VardiyaTanimi(
-            isim=v["isim"],
-            baslangic=v.get("baslangic", "08:00"),
-            bitis=v.get("bitis", "16:00"),
-            minimum_staffing=v.get("minimum_staffing", 1)
+    # Toplam hedef - zorunlu taban / teorik tavan bilgilendirmesi.
+    # G1.3'ten beri hedefler soft: bu aralığın dışında olmak artık İMKÂNSIZ
+    # DEĞİL, yalnızca sapma riskini işaret eder. st.stop() YOK — yapısal
+    # eksiklik (örn. boş personel listesi) dışında çözüm engellenmez.
+    toplam_hedef = sum(hedefler.values())
+    enforce_minimum_staffing = st.session_state.get("enforce_minimum_staffing", True)
+    hard_taban, teorik_tavan = _staffing_taban_tavan(
+        alanlar, vardiyalar, gun_sayisi, enforce_minimum_staffing
+    )
+
+    if hard_taban > 0 and toplam_hedef < hard_taban:
+        st.warning(
+            f"Toplam hedef ({toplam_hedef}), zorunlu doluluk tabanının "
+            f"({hard_taban}) altında. Plan yine üretilir; kişilere "
+            f"hedeflerinden fazla nöbet düşecek ve sapmalar raporlanacak."
         )
-        for v in vardiyalar_data
-    ]
+    if teorik_tavan is not None and toplam_hedef > teorik_tavan:
+        st.warning(
+            f"Toplam hedef ({toplam_hedef}), teorik doluluk tavanının "
+            f"({teorik_tavan}) üstünde. Kişiler hedeflerinin altında kalacak."
+        )
 
     # Personel alan yetkinlikleri
     personel_alan_yetkinlikleri = st.session_state.get("personel_alan_yetkinlikleri", {})
@@ -248,6 +470,26 @@ def _cozum_olustur():
         config=config
     )
 
+    # Girdi kimlik doğrulaması (çözüm kapısı) - solver kurulumundan ÖNCE
+    kidem_grubu_isimleri = [g["isim"] for g in st.session_state.get("kidem_gruplari", [])]
+    dogrulama_hatalari, dogrulama_uyarilari = _girdi_dogrula(solver_input, kidem_grubu_isimleri)
+
+    if dogrulama_hatalari:
+        st.error(
+            "**Girdi doğrulaması başarısız — çözüm başlatılmadı:**\n"
+            + "\n".join(f"- {h}" for h in dogrulama_hatalari)
+        )
+        st.stop()
+
+    for u in dogrulama_uyarilari:
+        st.warning(u)
+
+    if kirilimi_ezilen_kisiler:
+        st.info(
+            "Şu kişilerde kişisel hedef, grup vardiya kırılımının önüne geçti: "
+            + ", ".join(kirilimi_ezilen_kisiler)
+        )
+
     mod_bilgi = []
     if alanlar:
         mod_bilgi.append("Çoklu alan")
@@ -258,6 +500,7 @@ def _cozum_olustur():
     mod_str = f" ({', '.join(mod_bilgi)})" if mod_bilgi else ""
     st.info(f"Solver çalıştırılıyor...{mod_str}")
 
+    solver = None
     try:
         solver = NobetSolver(solver_input)
         schedule = solver.coz()
@@ -273,11 +516,19 @@ def _cozum_olustur():
             sonuc={str(k): v for k, v in schedule.items()},
             sonuc_alanlı=bool(alanlar)
         )
-        aylik_plani_kaydet(plan)
+        if not aylik_plani_kaydet(plan):
+            st.error("Kaydedilemedi — değişiklikler kalıcı olmayabilir")
 
-    except Exception as e:
-        st.error("❌ Çözüm bulunamadı.")
-        st.caption(str(e))
+    except ValueError as e:
+        # Bilinçli red: G1.2 pre-solve doğrulaması (örn. hedef > kişisel
+        # maksimum) VEYA solver'ın INFEASIBLE raise'i (ikisi de ValueError).
+        # Bu bir KURAL sorunu — teşhis anlamlı, çalıştırılır.
+        meta = getattr(solver, "cozum_meta", None) if solver is not None else None
+        baslik = "⚠️ Girdi kuralları çözümü engelliyor"
+        if meta:
+            baslik += f" (status: {meta['status']})"
+        st.error(baslik)
+        st.markdown(f"**{e}**")
 
         # Gelişmiş teşhis
         teshisler = gelismis_teshis(
@@ -318,6 +569,14 @@ def _cozum_olustur():
 
         st.stop()
 
+    except Exception as e:
+        # Kod hatası (TypeError, KeyError, AttributeError, ...) - bu bir
+        # KURAL sorunu DEĞİL. Teşhis burada yanıltıcı olur, ÇALIŞTIRILMAZ.
+        st.error("❌ Beklenmedik uygulama hatası")
+        st.caption("Bu bir kural sorunu değil — geliştiriciye hata raporu iletebilirsiniz.")
+        st.exception(e)
+        st.stop()
+
     # Sonuç tablosu - mod'a göre farklı gösterim
     weekdays_tr = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
@@ -325,12 +584,20 @@ def _cozum_olustur():
     has_alanlar = bool(alanlar)
     has_vardiyalar = bool(vardiyalar)
 
+    # Karne icin: modden bagimsiz toplam sapma (Sigma |gerceklesen - hedef|)
+    toplam_sayim = _toplam_sayim_cikar(schedule, has_alanlar, has_vardiyalar, personeller)
+    toplam_sapma = sum(
+        abs(toplam_sayim.get(p, 0) - hedefler.get(p, default_target))
+        for p in personeller
+    )
+
     if has_alanlar and has_vardiyalar:
         # ALAN + VARDİYA MODU - {gun: {alan: {vardiya: [kişiler]}}}
         alan_isimleri = [a.isim for a in alanlar]
         vardiya_isimleri = [v.isim for v in vardiyalar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -347,15 +614,19 @@ def _cozum_olustur():
             for alan_isim in alan_isimleri:
                 alan_data = gun_data.get(alan_isim, {})
                 for vardiya_isim in vardiya_isimleri:
-                    kisiler = alan_data.get(vardiya_isim, [])
                     col_name = f"{alan_isim} / {vardiya_isim}"
-                    row[col_name] = ", ".join(kisiler) if kisiler else "-"
+                    metin, bos_mu = _hucre_degeri(alan_data, vardiya_isim)
+                    row[col_name] = metin
+                    if bos_mu:
+                        bos_sayisi += 1
 
             rows.append(row)
 
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan + Vardiya)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -379,9 +650,11 @@ def _cozum_olustur():
                                     if v.isim == vardiya_isim:
                                         toplam_saat += v.saat
                                         break
+            hedef = hedefler.get(p, default_target)
             stat["Toplam Nöbet"] = toplam
             stat["Toplam Saat"] = toplam_saat
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             stats.append(stat)
 
         st.table(pd.DataFrame(stats))
@@ -391,6 +664,7 @@ def _cozum_olustur():
         vardiya_isimleri = [v.isim for v in vardiyalar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -405,14 +679,18 @@ def _cozum_olustur():
 
             # Her vardiya için sütun
             for vardiya_isim in vardiya_isimleri:
-                kisiler = gun_data.get(vardiya_isim, [])
-                row[vardiya_isim] = ", ".join(kisiler) if kisiler else "-"
+                metin, bos_mu = _hucre_degeri(gun_data, vardiya_isim)
+                row[vardiya_isim] = metin
+                if bos_mu:
+                    bos_sayisi += 1
 
             rows.append(row)
 
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Vardiya Modu)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -430,9 +708,11 @@ def _cozum_olustur():
                 stat[vardiya.isim] = count
                 toplam += count
                 toplam_saat += count * vardiya.saat
+            hedef = hedefler.get(p, default_target)
             stat["TOPLAM"] = toplam
             stat["Saat"] = toplam_saat
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             stats.append(stat)
 
         st.table(pd.DataFrame(stats))
@@ -442,6 +722,7 @@ def _cozum_olustur():
         alan_isimleri = [a.isim for a in alanlar]
 
         rows = []
+        bos_sayisi = 0
         for gun in range(1, gun_sayisi + 1):
             dt = datetime(yil, ay, gun)
             wd = weekdays_tr[dt.weekday()]
@@ -456,14 +737,18 @@ def _cozum_olustur():
 
             # Her alan için sütun
             for alan_isim in alan_isimleri:
-                kisiler = gun_data.get(alan_isim, [])
-                row[alan_isim] = ", ".join(kisiler) if kisiler else "-"
+                metin, bos_mu = _hucre_degeri(gun_data, alan_isim)
+                row[alan_isim] = metin
+                if bos_mu:
+                    bos_sayisi += 1
 
             rows.append(row)
 
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu! (Çoklu Alan Modu)")
+        _cozum_karnesi_goster(solver, toplam_sapma)
+        _bos_slot_uyarisi_goster(bos_sayisi, enforce_minimum_staffing)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -479,8 +764,10 @@ def _cozum_olustur():
                 count = sum(1 for g in schedule.values() if p in g.get(alan_isim, []))
                 stat[alan_isim] = count
                 toplam += count
+            hedef = hedefler.get(p, default_target)
             stat["TOPLAM"] = toplam
-            stat["Hedef"] = hedefler.get(p, default_target)
+            stat["Hedef"] = hedef
+            stat["Fark"] = toplam - hedef
             alan_stats.append(stat)
 
         st.table(pd.DataFrame(alan_stats))
@@ -510,6 +797,7 @@ def _cozum_olustur():
         df_schedule = pd.DataFrame(rows)
 
         st.success("🎉 Çözüm bulundu!")
+        _cozum_karnesi_goster(solver, toplam_sapma)
         st.subheader("📋 Oluşturulan Nöbet Listesi")
         st.dataframe(df_schedule, use_container_width=True, hide_index=True)
 
@@ -557,6 +845,7 @@ def _cozum_olustur():
 
     fill_weekend = PatternFill(start_color="FFF4E6", end_color="FFF4E6", fill_type="solid")
     fill_holiday = PatternFill(start_color="FFE0E0", end_color="FFE0E0", fill_type="solid")
+    fill_bos = PatternFill(start_color="FF4444", end_color="FF4444", fill_type="solid")
 
     for r_i, row in enumerate(rows, start=2):
         dt = datetime(yil, ay, row["Gün"])
@@ -564,11 +853,15 @@ def _cozum_olustur():
         is_holiday = row["Gün"] in tatiller
 
         for c_i, h in enumerate(fieldnames, start=1):
-            cell = ws.cell(row=r_i, column=c_i, value=row.get(h, ""))
+            deger = row.get(h, "")
+            bos_mu = deger == BOS_SLOT_ISARETI
+            cell = ws.cell(row=r_i, column=c_i, value=("BOŞ" if bos_mu else deger))
             if c_i <= 5:
                 cell.alignment = center
 
-            if is_holiday:
+            if bos_mu:
+                cell.fill = fill_bos
+            elif is_holiday:
                 cell.fill = fill_holiday
             elif is_weekend:
                 cell.fill = fill_weekend

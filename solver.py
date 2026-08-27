@@ -825,12 +825,16 @@ class NobetSolver:
                 for a_idx, alan in enumerate(self.input.alanlar):
                     sonuc[g][alan.isim] = {}
                     for v_idx, vardiya in enumerate(self.input.vardiyalar):
+                        # Gecersiz alan-vardiya kombinasyonu yazilmaz; gecerli
+                        # olan bos liste olsa bile yazilir (bos slot bilgisi
+                        # kaybolmasin - bkz. G2.4).
+                        if alan.vardiya_tipleri and vardiya.isim not in alan.vardiya_tipleri:
+                            continue
                         kisiler = [isim for p_idx, isim in enumerate(self.input.personeller)
                                   if solver.Value(self.x[p_idx, g, a_idx, v_idx]) == 1]
-                        if kisiler:
-                            sonuc[g][alan.isim][vardiya.isim] = kisiler
+                        sonuc[g][alan.isim][vardiya.isim] = kisiler
             return sonuc
-        
+
         elif self.input.vardiya_modu:
             sonuc = {}
             for g in range(1, self.gun_sayisi + 1):
@@ -838,8 +842,7 @@ class NobetSolver:
                 for v_idx, vardiya in enumerate(self.input.vardiyalar):
                     kisiler = [isim for p_idx, isim in enumerate(self.input.personeller)
                               if solver.Value(self.x[p_idx, g, 0, v_idx]) == 1]
-                    if kisiler:
-                        sonuc[g][vardiya.isim] = kisiler
+                    sonuc[g][vardiya.isim] = kisiler
             return sonuc
         
         elif self.input.coklu_alan_modu:
@@ -911,13 +914,15 @@ def gelismis_teshis(
     # =========================================================================
     # 1. KİŞİ BAZLI HEDEF ANALİZİ
     # =========================================================================
-    
+
+    vardiya_modu = bool(vardiyalar)
+    max_mumkun_map = {}  # kişi -> max_mumkun (bölüm 4'te nöbet modu kapasitesi için tekrar kullanılır)
+
     for p in personeller:
         musait_gunler = [g for g in range(1, gun_sayisi + 1) if g not in izinler.get(p, set())]
         musait_gun_sayisi = len(musait_gunler)
-        
+
         # Ardışık yasak varsa ve nöbet modundaysa max nöbet = (müsait+1)/2
-        vardiya_modu = bool(vardiyalar)
         max_mumkun = kisinin_max_atama(
             musait_gun_sayisi,
             vardiya_modu,
@@ -926,7 +931,8 @@ def gelismis_teshis(
             gunasiri_limit_aktif=gunasiri_limit_aktif,
             max_gunasiri=max_gunasiri
         )
-        
+        max_mumkun_map[p] = max_mumkun
+
         toplam_hedef = hedefler.get(p, 0)
         
         if toplam_hedef > max_mumkun:
@@ -1111,19 +1117,34 @@ def gelismis_teshis(
     # =========================================================================
     
     toplam_hedef = sum(hedefler.values())
-    
+
     if alanlar:
+        # G1.4'ten beri gunluk_kontenjan SOFT bir hedeftir (yalnızca
+        # max_kontenjan hard bir tavan olabilir) - bu kapasite hard bir
+        # sınır değil.
         toplam_kapasite = sum(a.gunluk_kontenjan for a in alanlar) * gun_sayisi
         if vardiyalar:
             toplam_kapasite *= len(vardiyalar)
+        kapasite_hard_sinir = False
     elif vardiyalar:
         toplam_kapasite = len(vardiyalar) * gun_sayisi
+        kapasite_hard_sinir = False
     else:
-        toplam_kapasite = gun_sayisi
-    
+        # Nöbet modu: "günde 1 kişi" varsayımı YOK (modelde böyle bir hard
+        # kısıt yok). Gerçek üst sınır, her kişinin ardışık/günaşırı
+        # kurallarıyla HARD sınırlanan kendi max_mumkun değerlerinin
+        # toplamıdır (G1.2 formülü) - hedefler soft olsa bile solver'ın
+        # asla aşamayacağı gerçek bir tavan budur.
+        toplam_kapasite = sum(max_mumkun_map.values())
+        kapasite_hard_sinir = True
+
     if toplam_hedef < toplam_kapasite:
-        # Minimum staffing hard ise bu infeasible demektir
-        seviye = "error" if enforce_minimum_staffing else "warning"
+        # Minimum staffing SADECE vardiya modunda hard kurulur (bkz.
+        # solver._hard_constraints_ekle: enforce_minimum_staffing bloğu
+        # "if vardiya_modu:" şartına bağlı). Vardiya yoksa bu bayrağın
+        # modelde hiçbir etkisi yoktur.
+        staffing_hard = enforce_minimum_staffing and vardiya_modu
+        seviye = "error" if staffing_hard else "warning"
         sorunlar.append(TeshisSonucu(
             tip="toplam_hedef_yetersiz",
             seviye=seviye,
@@ -1137,16 +1158,31 @@ def gelismis_teshis(
             }
         ))
     elif toplam_hedef > toplam_kapasite:
-        sorunlar.append(TeshisSonucu(
-            tip="toplam_hedef_fazla",
-            seviye="error",
-            gun=None,
-            mesaj=f"Toplam hedef ({toplam_hedef}) > kapasite ({toplam_kapasite}) - İmkansız!",
-            detay={
-                "toplam_hedef": toplam_hedef,
-                "toplam_kapasite": toplam_kapasite
-            }
-        ))
+        if kapasite_hard_sinir:
+            sorunlar.append(TeshisSonucu(
+                tip="toplam_hedef_fazla",
+                seviye="error",
+                gun=None,
+                mesaj=f"Toplam hedef ({toplam_hedef}) > kişisel maksimumlar toplamı ({toplam_kapasite}) - İmkânsız",
+                detay={
+                    "toplam_hedef": toplam_hedef,
+                    "toplam_kapasite": toplam_kapasite
+                }
+            ))
+        else:
+            # G1.3'ten beri hedefler soft: bu artık engel değil, yalnızca
+            # sapma riskidir.
+            sorunlar.append(TeshisSonucu(
+                tip="toplam_hedef_fazla_soft",
+                seviye="warning",
+                gun=None,
+                mesaj=f"Toplam hedef ({toplam_hedef}) > hedef kapasitesi ({toplam_kapasite}) - "
+                      f"engel değil ama kişiler hedeflerinin altında kalacak, hedefler sapacak",
+                detay={
+                    "toplam_hedef": toplam_hedef,
+                    "toplam_kapasite": toplam_kapasite
+                }
+            ))
     
     # =========================================================================
     # 5. EŞLEŞTİRME KURALLARI ANALİZİ
@@ -1183,7 +1219,8 @@ def gelismis_teshis(
             tip="belirsiz",
             seviye="warning",
             gun=None,
-            mesaj="Belirgin sorun tespit edilemedi. Kısıtlar kombinasyonu çözümsüz olabilir.",
+            mesaj="Bilinen desenlerde sorun bulunamadı; teşhis kapsamı sınırlıdır — "
+                  "kısıt etkileşimleri Faz 3 teşhisiyle adreslenecek.",
             detay={}
         ))
     
@@ -1193,7 +1230,8 @@ def gelismis_teshis(
 def teshis_ozeti(teshisler: List[TeshisSonucu]) -> str:
     """Teşhis sonuçlarını okunabilir metin olarak formatlar"""
     if not teshisler:
-        return "Sorun tespit edilemedi."
+        return ("Bilinen desenlerde sorun bulunamadı; teşhis kapsamı sınırlıdır — "
+                "kısıt etkileşimleri Faz 3 teşhisiyle adreslenecek.")
     
     lines = []
     errors = [t for t in teshisler if t.seviye == "error"]

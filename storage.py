@@ -5,6 +5,7 @@ Ayarları ve aylık planları JSON dosyalarına kaydeder/yükler.
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -12,6 +13,8 @@ from datetime import datetime
 
 from models import Ayarlar, AylikPlan
 
+
+logger = logging.getLogger(__name__)
 
 # Varsayılan veri dizini
 DATA_DIR = Path(__file__).parent / "data"
@@ -41,7 +44,7 @@ def ayarlari_kaydet(ayarlar: Ayarlar) -> bool:
             json.dump(ayarlar.to_dict(), f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"Ayarlar kaydedilemedi: {e}")
+        logger.error(f"Ayarlar kaydedilemedi: {e}", exc_info=True)
         return False
 
 
@@ -59,7 +62,7 @@ def ayarlari_yukle() -> Optional[Ayarlar]:
             data = json.load(f)
         return Ayarlar.from_dict(data)
     except Exception as e:
-        print(f"Ayarlar yüklenemedi: {e}")
+        logger.error(f"Ayarlar yüklenemedi: {e}", exc_info=True)
         return None
 
 
@@ -93,7 +96,7 @@ def aylik_plani_kaydet(plan: AylikPlan) -> bool:
             json.dump(plan.to_dict(), f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"Plan kaydedilemedi: {e}")
+        logger.error(f"Plan kaydedilemedi: {e}", exc_info=True)
         return False
 
 
@@ -169,7 +172,7 @@ def aylik_plani_yukle(yil: int, ay: int) -> Optional[AylikPlan]:
             data = json.load(f)
         return AylikPlan.from_dict(data)
     except Exception as e:
-        print(f"Plan yüklenemedi: {e}")
+        logger.error(f"Plan yüklenemedi: {e}", exc_info=True)
         return None
 
 
@@ -184,14 +187,17 @@ def aylik_plani_yukle_veya_yeni(yil: int, ay: int) -> AylikPlan:
 def kayitli_planlari_listele() -> List[dict]:
     """
     Kaydedilmiş tüm planların listesini döndürür.
-    
+
+    Parse edilemeyen (bozuk) dosyalar listeden sessizce atılmaz;
+    {"dosya": ..., "bozuk": True} kaydıyla listede yer alır.
+
     Returns:
         [{"yil": 2025, "ay": 1, "dosya": "2025_01.json", "tarih": "..."}, ...]
     """
     try:
         veri_dizinini_hazirla()
         planlar = []
-        
+
         for dosya in SCHEDULES_DIR.glob("*.json"):
             try:
                 with open(dosya, 'r', encoding='utf-8') as f:
@@ -203,14 +209,15 @@ def kayitli_planlari_listele() -> List[dict]:
                     "olusturma_tarihi": data.get("olusturma_tarihi"),
                     "sonuc_var": data.get("sonuc") is not None
                 })
-            except Exception:
-                continue
-        
-        # Tarihe göre sırala (en yeni önce)
-        planlar.sort(key=lambda x: (x["yil"], x["ay"]), reverse=True)
+            except Exception as e:
+                logger.error(f"Plan dosyası okunamadı ({dosya.name}): {e}", exc_info=True)
+                planlar.append({"dosya": dosya.name, "bozuk": True})
+
+        # Tarihe göre sırala (en yeni önce); bozuk kayıtlar (yil/ay yok) sona düşer
+        planlar.sort(key=lambda x: (x.get("yil") or 0, x.get("ay") or 0), reverse=True)
         return planlar
     except Exception as e:
-        print(f"Plan listesi alınamadı: {e}")
+        logger.error(f"Plan listesi alınamadı: {e}", exc_info=True)
         return []
 
 
@@ -234,7 +241,7 @@ def plani_sil(yil: int, ay: int) -> bool:
             return True
         return False
     except Exception as e:
-        print(f"Plan silinemedi: {e}")
+        logger.error(f"Plan silinemedi: {e}", exc_info=True)
         return False
 
 
@@ -249,7 +256,7 @@ def ayarlari_json_dan_import(json_str: str) -> Optional[Ayarlar]:
         data = json.loads(json_str)
         return Ayarlar.from_dict(data)
     except Exception as e:
-        print(f"JSON import hatası: {e}")
+        logger.error(f"JSON import hatası: {e}", exc_info=True)
         return None
 
 
@@ -264,5 +271,5 @@ def plani_json_dan_import(json_str: str) -> Optional[AylikPlan]:
         data = json.loads(json_str)
         return AylikPlan.from_dict(data)
     except Exception as e:
-        print(f"JSON import hatası: {e}")
+        logger.error(f"JSON import hatası: {e}", exc_info=True)
         return None

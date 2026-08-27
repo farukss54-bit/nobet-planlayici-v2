@@ -8,9 +8,19 @@ from storage import ayarlari_kaydet
 from utils import personel_referanslarini_temizle, hesapla_otomatik_hedef, ay_gun_sayisi
 
 
+KAYIT_HATASI_MESAJI = "Kaydedilemedi — değişiklikler kalıcı olmayabilir"
+
+
 def render_personel_tab(session_to_ayarlar_func=None):
     st.subheader("👥 Kişiler ve Hedefler")
     degisiklik_yapildi = False
+
+    # st.rerun() sonrası gosterilmesi gereken kayit hatasi (rerun oncesi
+    # st.error cagrisi rerun ile birlikte kaybolur, bu yuzden session_state
+    # uzerinden bir sonraki calismaya tasinir).
+    bekleyen_hata = st.session_state.pop("_kayit_hata_mesaji", None)
+    if bekleyen_hata:
+        st.error(bekleyen_hata)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -33,9 +43,11 @@ def render_personel_tab(session_to_ayarlar_func=None):
         # Varsayılan hedef değişmişse mevcut tüm personelleri senkronize et
         onceki = st.session_state.get("_varsayilan_hedef_onceki", varsayilan_input)
         if onceki != varsayilan_input and st.session_state.get("personel_list"):
+            personel_sayisi_guncellenen = len(st.session_state["personel_list"])
             for p in st.session_state["personel_list"]:
                 st.session_state.setdefault("personel_targets", {})[p] = varsayilan_input
             degisiklik_yapildi = True
+            st.info(f"Varsayılan hedef değişti — {personel_sayisi_guncellenen} kişinin hedefi güncellendi.")
         st.session_state["_varsayilan_hedef_onceki"] = varsayilan_input
 
     # Otomatik hedef hesaplama kontrolü
@@ -48,7 +60,8 @@ def render_personel_tab(session_to_ayarlar_func=None):
     if otomatik_aktif != st.session_state.get("otomatik_hedef", True):
         st.session_state["otomatik_hedef"] = otomatik_aktif
         if session_to_ayarlar_func is not None:
-            ayarlari_kaydet(session_to_ayarlar_func())
+            if not ayarlari_kaydet(session_to_ayarlar_func()):
+                st.error(KAYIT_HATASI_MESAJI)
 
     st.divider()
 
@@ -103,7 +116,8 @@ def render_personel_tab(session_to_ayarlar_func=None):
                     degisiklik_yapildi = True
 
                 if session_to_ayarlar_func is not None:
-                    ayarlari_kaydet(session_to_ayarlar_func())
+                    if not ayarlari_kaydet(session_to_ayarlar_func()):
+                        st.session_state["_kayit_hata_mesaji"] = KAYIT_HATASI_MESAJI
                 st.rerun()
         with btn_col2:
             st.caption("💡 Butona basınca herkese 'toplam ihtiyaç ÷ personel' formülüyle eşit nöbet dağıtılır. Sonra dilediğiniz kişiyi elle değiştirebilirsiniz.")
@@ -113,7 +127,7 @@ def render_personel_tab(session_to_ayarlar_func=None):
     default_target = st.session_state.get("varsayilan_hedef", 7)
 
     for i in range(personel_sayisi):
-        cols = st.columns([3, 1])
+        cols = st.columns([3, 1, 1])
         with cols[0]:
             eski_isim = st.session_state["personel_list"][i]
             yeni_isim = st.text_input(
@@ -125,21 +139,40 @@ def render_personel_tab(session_to_ayarlar_func=None):
             if eski_isim != yeni_isim:
                 personel_referanslarini_temizle(st.session_state, eski_isim, yeni_isim)
                 degisiklik_yapildi = True
+
+            # Anlik uyari (kaydetmeyi engellemez - cozum kapisi G2.6'da durdurur)
+            if not yeni_isim.strip():
+                st.warning("⚠ Boş isim")
+            elif st.session_state["personel_list"].count(yeni_isim) > 1:
+                st.warning(f"⚠ '{yeni_isim}' başka bir satırda da var")
         with cols[1]:
             p_name = st.session_state["personel_list"][i]
+            kisisel_kayit_var = p_name in st.session_state.get("personel_targets", {})
+            oto = st.checkbox(
+                "Oto",
+                value=not kisisel_kayit_var,
+                key=f"oto_hedef_{i}",
+                help="İşaretliyse bu kişi otomatik/kıdem hedef zincirini kullanır. "
+                     "İşareti kaldırırsanız girdiğiniz değer — varsayılana eşit olsa bile — kalıcı olur."
+            )
+        with cols[2]:
             current_target = st.session_state.get("personel_targets", {}).get(p_name, default_target)
             new_target = st.number_input(
                 "Hedef",
                 min_value=0, max_value=31,
                 value=int(current_target),
                 step=1,
-                key=f"target_{i}"
+                key=f"target_{i}",
+                disabled=oto
             )
-            if new_target != default_target:
+            if oto:
+                st.session_state.get("personel_targets", {}).pop(p_name, None)
+            else:
+                # Deger varsayilana esit olsa BILE kaydedilir - "Oto" isaretini
+                # kaldirmak bilincli bir tercihtir, sessizce geri alinmaz.
                 st.session_state.setdefault("personel_targets", {})[p_name] = new_target
-            elif p_name in st.session_state.get("personel_targets", {}):
-                st.session_state["personel_targets"].pop(p_name, None)
 
     # Değişiklik varsa ayarları otomatik kaydet
     if degisiklik_yapildi and session_to_ayarlar_func is not None:
-        ayarlari_kaydet(session_to_ayarlar_func())
+        if not ayarlari_kaydet(session_to_ayarlar_func()):
+            st.error(KAYIT_HATASI_MESAJI)

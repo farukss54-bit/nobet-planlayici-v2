@@ -92,8 +92,10 @@ def render_vardiyalar_tab():
             try:
                 vt = VardiyaTipi(v["isim"], v["baslangic"], v["bitis"], v.get("renk", "#808080"))
                 saat = vt.saat
-            except:
+                saat_okunamadi = not vt.saat_gecerli
+            except Exception:
                 saat = "?"
+                saat_okunamadi = False
 
             col1, col2, col3, col4, col5 = st.columns([4, 2, 1, 1, 1])
 
@@ -103,7 +105,10 @@ def render_vardiyalar_tab():
                     unsafe_allow_html=True
                 )
             with col2:
-                st.caption(f"{v['baslangic']} → {v['bitis']} ({saat}s)")
+                etiket = f"{v['baslangic']} → {v['bitis']} ({saat}s)"
+                if saat_okunamadi:
+                    etiket += " ⚠ saat okunamadı (8s varsayıldı)"
+                st.caption(etiket)
             with col3:
                 current_min_staff = v.get("minimum_staffing", 1)
                 yeni_min_staff = st.number_input(
